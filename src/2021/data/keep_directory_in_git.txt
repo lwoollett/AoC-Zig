@@ -1,0 +1,1 @@
+Puzzle inputs live here as dayNN.txt files.

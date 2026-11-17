@@ -1,0 +1,11 @@
+.{
+    .name = .aoc,
+    .version = "0.1.0",
+    .fingerprint = 0x808a3f8ff566479d,
+    .dependencies = .{
+        // Zig 0.17 registry-validates fingerprints, but a path dependency
+        // resolves against the working tree at ~/repos/zom, so no hash needed.
+        .zom = .{ .path = "../zom" },
+    },
+    .paths = .{""},
+}
