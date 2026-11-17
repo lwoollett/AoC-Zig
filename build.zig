@@ -33,6 +33,13 @@ pub fn build(b: *std.Build) void {
         .optimize = mode,
     });
 
+    // Shared Intcode VM for 2019 (imported as @import("intcode")).
+    const intcode = b.createModule(.{
+        .root_source_file = b.path("src/2019/intcode.zig"),
+        .target = target,
+        .optimize = mode,
+    });
+
     const install_all = b.step("install_all", "Install all days");
     const run_all = b.step("run_all", "Run all days");
 
@@ -111,6 +118,9 @@ pub fn build(b: *std.Build) void {
                 .imports = if (wants_zom) &.{
                     .{ .name = "util", .module = util },
                     .{ .name = "zom", .module = zom },
+                } else if (year == 2019) &.{
+                    .{ .name = "util", .module = util },
+                    .{ .name = "intcode", .module = intcode },
                 } else &.{
                     .{ .name = "util", .module = util },
                 },

@@ -8,16 +8,56 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day06.txt");
 
 pub fn main() !void {
+    var orbits = StrMap([]const u8).init(gpa); // object -> what it orbits
+    defer orbits.deinit();
 
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        const paren = std.mem.findScalar(u8, line, ')').?;
+        try orbits.put(line[paren + 1 ..], line[0..paren]);
+    }
+
+    // part 1: total direct+indirect orbits
+    var total: u64 = 0;
+    var it = orbits.keyIterator();
+    while (it.next()) |obj| {
+        var cur = obj.*;
+        while (orbits.get(cur)) |parent| {
+            total += 1;
+            cur = parent;
+        }
+    }
+    print("part 1: {d}\n", .{total});
+
+    // part 2: transfers between YOU and SAN (exclude the -1 shared COM)
+    var you_chain = StrMap(u32).init(gpa);
+    defer you_chain.deinit();
+    {
+        var steps: u32 = 0;
+        var cur: []const u8 = orbits.get("YOU").?;
+        while (orbits.get(cur)) |parent| {
+            steps += 1;
+            try you_chain.put(parent, steps);
+            cur = parent;
+        }
+    }
+    {
+        var steps: u32 = 0;
+        var cur: []const u8 = orbits.get("SAN").?;
+        while (orbits.get(cur)) |parent| {
+            steps += 1;
+            if (you_chain.get(parent)) |up| {
+                print("part 2: {d}\n", .{steps + up});
+                return;
+            }
+            cur = parent;
+        }
+    }
 }
 
 // Useful stdlib functions
@@ -27,12 +67,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

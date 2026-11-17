@@ -7,17 +7,28 @@ const BitSet = std.DynamicBitSet;
 
 const util = @import("util");
 const gpa = util.gpa;
+const intcode = @import("intcode");
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day05.txt");
 
 pub fn main() !void {
-
+    // p1: input 1 — all outputs should be 0 except the diagnostic (last)
+    {
+        var vm = try intcode.VM.initSource(gpa, data);
+        defer vm.deinit();
+        _ = try vm.runWith(1);
+        print("part 1 outputs: {any}\n", .{vm.outputs.items});
+        print("part 1: {d}\n", .{vm.lastOutput()});
+    }
+    // p2: input 5
+    {
+        var vm = try intcode.VM.initSource(gpa, data);
+        defer vm.deinit();
+        _ = try vm.runWith(5);
+        print("part 2: {d}\n", .{vm.lastOutput()});
+    }
 }
 
 // Useful stdlib functions
@@ -27,12 +38,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;
