@@ -8,16 +8,67 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day08.txt");
 
-pub fn main() !void {
+const w = 50;
+const h = 6;
+var screen: [h][w]bool = @splat(@splat(false));
 
+pub fn main() !void {
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        if (startsWith(line, "rect ")) {
+            // rect AxB
+            var it = tokenizeAny(u8, line["rect ".len..], "x");
+            const a = try parseInt(u32, it.next().?, 10);
+            const b = try parseInt(u32, it.next().?, 10);
+            for (0..b) |y| {
+                for (0..a) |x| {
+                    screen[y][x] = true;
+                }
+            }
+        } else if (startsWith(line, "rotate row y=")) {
+            var it = tokenizeAny(u8, line["rotate row y=".len..], " by");
+            const y = try parseInt(usize, it.next().?, 10);
+            const shift = try parseInt(usize, trim(u8, it.next().?, " "), 10);
+            const row = screen[y];
+            var new_row: [w]bool = @splat(false);
+            for (row, 0..) |on, x| {
+                if (on) new_row[(x + shift) % w] = true;
+            }
+            screen[y] = new_row;
+        } else if (startsWith(line, "rotate column x=")) {
+            var it = tokenizeAny(u8, line["rotate column x=".len..], " by");
+            const x = try parseInt(usize, it.next().?, 10);
+            const shift = try parseInt(usize, trim(u8, it.next().?, " "), 10);
+            var col: [h]bool = undefined;
+            for (0..h) |y| col[y] = screen[y][x];
+            for (0..h) |y| {
+                screen[y][x] = col[(y + h - shift % h) % h];
+            }
+        }
+    }
+
+    var lit: usize = 0;
+    for (screen) |row| {
+        for (row) |on| {
+            if (on) lit += 1;
+        }
+    }
+    print("part 1: {d}\n", .{lit});
+    print("part 2 (read the letters):\n", .{});
+    for (screen) |row| {
+        for (row) |on| {
+            print("{s}", .{if (on) "#" else "."});
+        }
+        print("\n", .{});
+    }
+}
+
+fn startsWith(s: []const u8, prefix: []const u8) bool {
+    return std.mem.startsWith(u8, s, prefix);
 }
 
 // Useful stdlib functions
@@ -27,12 +78,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

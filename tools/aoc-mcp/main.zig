@@ -88,7 +88,7 @@ const Http = struct {
 // ---------------------------------------------------------------------------
 
 fn ensureOk(status: std.http.Status) !void {
-    const code = @intFromEnum(status);
+    const code = @backingInt(status);
     if (code >= 400) {
         std.debug.print("HTTP {d} from adventofcode.com (bad session? day locked?)\n", .{code});
         return error.HttpError;
@@ -424,7 +424,7 @@ const Mcp = struct {
                 try self.sendError(id, -32602, "unknown resource uri");
                 return true;
             }
-            const rest = uri["aocinput://".len ..];
+            const rest = uri["aocinput://".len..];
             const slash = std.mem.findScalar(u8, rest, '/') orelse {
                 try self.sendError(id, -32602, "bad uri");
                 return true;
