@@ -8,16 +8,83 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day03.txt");
 
-pub fn main() !void {
+fn abs(x: i64) i64 {
+    return if (x < 0) -x else x;
+}
 
+/// Ring r (0-based; ring 1 is the first move out) starts at square with
+/// side length 2r+1. Returns (x, y) for n on the Ulam spiral.
+fn spiralPos(n: u64) [2]i64 {
+    if (n == 1) return .{ 0, 0 };
+    var ring: u64 = 1;
+    while (n > (2 * ring + 1) * (2 * ring + 1)) ring += 1;
+    const side: i64 = @intCast(2 * ring);
+    const max: i64 = @intCast((2 * ring + 1) * (2 * ring + 1));
+    const min: i64 = @intCast((2 * ring - 1) * (2 * ring - 1) + 1);
+    _ = min;
+    // walk backwards from the ring's end (bottom-right corner)
+    var pos = [2]i64{ @intCast(ring), -@as(i64, @intCast(ring)) };
+    var steps = max - @as(i64, @intCast(n));
+    // right side going up
+    if (steps <= side - 1) {
+        pos[1] += steps;
+        return pos;
+    }
+    pos[1] += side - 1;
+    steps -= side - 1;
+    // top side going left
+    if (steps <= side) {
+        pos[0] -= steps;
+        return pos;
+    }
+    pos[0] -= side;
+    steps -= side;
+    // left side going down
+    if (steps <= side) {
+        pos[1] -= steps;
+        return pos;
+    }
+    pos[1] -= side;
+    steps -= side;
+    pos[0] += steps;
+    return pos;
+}
+
+pub fn main() !void {
+    const n = try parseInt(u64, trim(u8, data, " \n\r\t"), 10);
+
+    const p = spiralPos(n);
+    print("part 1: {d}\n", .{abs(p[0]) + abs(p[1])});
+
+    // Part 2: spiral-write sums of already-written neighbors.
+    const size: usize = 31; // covers ring 15
+    var grid: [size][size]u64 = @splat(@splat(0));
+    const c = size / 2;
+    grid[c][c] = 1;
+    var i: u64 = 2;
+    while (true) : (i += 1) {
+        const sp = spiralPos(i);
+        const x: usize = @intCast(@as(i64, @intCast(c)) + sp[0]);
+        const y: usize = @intCast(@as(i64, @intCast(c)) - sp[1]);
+        var sum: u64 = 0;
+        for ([3]isize{ -1, 0, 1 }) |dy| {
+            for ([3]isize{ -1, 0, 1 }) |dx| {
+                const yy = @as(isize, @intCast(y)) + dy;
+                const xx = @as(isize, @intCast(x)) + dx;
+                if (yy < 0 or xx < 0 or yy >= size or xx >= size) continue;
+                sum += grid[@intCast(yy)][@intCast(xx)];
+            }
+        }
+        grid[y][x] = sum;
+        if (sum > n) {
+            print("part 2: {d}\n", .{sum});
+            return;
+        }
+    }
 }
 
 // Useful stdlib functions
@@ -27,12 +94,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

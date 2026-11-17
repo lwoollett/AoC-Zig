@@ -308,7 +308,7 @@ begin
 	self.checkPart(ctl, 19, 2, "212");
 	self.checkPart(ctl, 20, 1, "665280");
 	self.checkPart(ctl, 20, 2, "705600");
-	self.checkPart(ctl, 21, 1, "123");
+	self.checkPart(ctl, 21, 1, "121");
 	self.checkPart(ctl, 21, 2, "201");
 	self.checkPart(ctl, 22, 1, "1824");
 	self.checkPart(ctl, 22, 2, "1937");
@@ -407,7 +407,7 @@ begin
 	yr.days[ 20 ].addPart( 1, "665280" );
 	yr.days[ 20 ].addPart( 2, "705600" );
 	yr.ensureDay( 21 );
-	yr.days[ 21 ].addPart( 1, "123" );
+	yr.days[ 21 ].addPart( 1, "121" );
 	yr.days[ 21 ].addPart( 2, "201" );
 	yr.ensureDay( 22 );
 	yr.days[ 22 ].addPart( 1, "1824" );
