@@ -16,7 +16,7 @@ const max_ports = 64;
 
 const Comp = struct { a: u32, b: u32, used: bool = false };
 
-var comps: [max_ports]Comp = undefined;
+var comps: [max_ports]Comp = @splat(.{ .a = 0, .b = 0, .used = false });
 var n_comps: usize = 0;
 var best_strength: u64 = 0;
 var best_longest_strength: u64 = 0;
@@ -28,7 +28,7 @@ fn build(port: u32, strength: u64, length: usize) void {
         best_length = length;
         best_longest_strength = strength;
     }
-    for (&comps) |*c| {
+    for (comps[0..n_comps]) |*c| {
         if (c.used) continue;
         var next: ?u32 = null;
         if (c.a == port) next = c.b;
