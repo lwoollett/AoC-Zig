@@ -40,7 +40,7 @@ const Machine = struct {
         while (pc < self.code.len) {
             steps += 1;
             if (steps > max_steps) return error.TooManySteps;
-            
+
             var ins = self.code[pc];
             switch (ins.op) {
                 .cpy => {

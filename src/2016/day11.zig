@@ -188,7 +188,7 @@ pub fn main() !void {
             start.pairs[idx][1] = floor_of_line;
         } else if (std.mem.eql(u8, t, "microchip")) {
             const name = toks[tok_i - 1]; // "X-compatible"
-            const base = name[0 .. std.mem.findScalar(u8, name, '-').?];
+            const base = name[0..std.mem.findScalar(u8, name, '-').?];
             const idx = try pairIndex(&names, base, &start);
             start.pairs[idx][0] = floor_of_line;
         }
