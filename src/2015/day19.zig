@@ -8,16 +8,85 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day19.txt");
 
-pub fn main() !void {
+const Rule = struct { from: []const u8, to: []const u8 };
 
+pub fn main() !void {
+    var rules: List(Rule) = .empty;
+    defer rules.deinit(gpa);
+    var medicine: []const u8 = "";
+
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        if (std.mem.find(u8, line, "=>") == null) {
+            if (line.len > 0) medicine = line;
+            continue;
+        }
+        var it = tokenizeAny(u8, line, " ");
+        const from = it.next().?;
+        _ = it.next().?; // =>
+        const to = it.next().?;
+        try rules.append(gpa, .{ .from = from, .to = to });
+    }
+
+    // Part 1: distinct molecules after exactly one replacement.
+    // The map owns its keys (slices are not copied on put).
+    var seen = StrMap(void).init(gpa);
+    defer {
+        var kit = seen.keyIterator();
+        while (kit.next()) |k| gpa.free(k.*);
+        seen.deinit();
+    }
+    for (rules.items) |rule| {
+        var pos: usize = 0;
+        while (std.mem.findPos(u8, medicine, pos, rule.from)) |idx| {
+            const buf = try std.mem.concat(gpa, u8, &.{
+                medicine[0..idx], rule.to, medicine[idx + rule.from.len ..],
+            });
+            if (seen.contains(buf)) {
+                gpa.free(buf);
+            } else {
+                try seen.put(buf, {});
+            }
+            pos = idx + 1;
+        }
+    }
+    print("part 1: {d}\n", .{seen.count()});
+
+    // Part 2: greedily run replacements in reverse (longest RHS first),
+    // replacing one occurrence per step, until we reach "e".
+    var mol = try gpa.dupe(u8, medicine);
+    defer gpa.free(mol);
+
+    // Sort rules by RHS length descending for a deterministic greedy order.
+    std.mem.sort(Rule, rules.items, {}, struct {
+        fn lessThan(_: void, a: Rule, b: Rule) bool {
+            return a.to.len > b.to.len;
+        }
+    }.lessThan);
+
+    var steps: usize = 0;
+    var guard: usize = 0;
+    while (!std.mem.eql(u8, mol, "e")) : (guard += 1) {
+        if (guard > 100_000) return error.NoReduction;
+        var replaced = false;
+        for (rules.items) |rule| {
+            const idx = std.mem.find(u8, mol, rule.to) orelse continue;
+            const buf = try std.mem.concat(gpa, u8, &.{
+                mol[0..idx], rule.from, mol[idx + rule.to.len ..],
+            });
+            gpa.free(mol);
+            mol = buf;
+            steps += 1;
+            replaced = true;
+            break;
+        }
+        if (!replaced) return error.Stuck;
+    }
+    print("part 2: {d}\n", .{steps});
 }
 
 // Useful stdlib functions
@@ -27,12 +96,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

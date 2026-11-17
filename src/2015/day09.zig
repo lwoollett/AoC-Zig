@@ -8,16 +8,69 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day09.txt");
 
-pub fn main() !void {
+const max_cities = 10;
 
+var dist: [max_cities][max_cities]u32 = @splat(@splat(0));
+var n_cities: usize = 0;
+
+var best_min: u64 = std.math.maxInt(u64);
+var best_max: u64 = 0;
+
+fn permute(path: *[max_cities]usize, used: *[max_cities]bool, depth: usize, len: u64) void {
+    if (depth == n_cities) {
+        best_min = @min(best_min, len);
+        best_max = @max(best_max, len);
+        return;
+    }
+    var c: usize = 0;
+    while (c < n_cities) : (c += 1) {
+        if (used[c]) continue;
+        used[c] = true;
+        path[depth] = c;
+        const extra: u64 = if (depth == 0) 0 else dist[path[depth - 1]][c];
+        permute(path, used, depth + 1, len + extra);
+        used[c] = false;
+    }
+}
+
+pub fn main() !void {
+    var ids = StrMap(usize).init(gpa);
+    defer ids.deinit();
+
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        // "A to B = N"
+        var it = tokenizeAny(u8, line, " ");
+        const a = it.next().?;
+        _ = it.next().?; // "to"
+        const b = it.next().?;
+        _ = it.next().?; // "="
+        const d = try parseInt(u32, it.next().?, 10);
+
+        const ia = try cityId(&ids, a);
+        const ib = try cityId(&ids, b);
+        dist[ia][ib] = d;
+        dist[ib][ia] = d;
+    }
+
+    var path: [max_cities]usize = undefined;
+    var used: [max_cities]bool = @splat(false);
+    permute(&path, &used, 0, 0);
+
+    print("part 1: {d}\n", .{best_min});
+    print("part 2: {d}\n", .{best_max});
+}
+
+fn cityId(ids: *StrMap(usize), name: []const u8) !usize {
+    if (ids.get(name)) |id| return id;
+    const id = n_cities;
+    n_cities += 1;
+    try ids.put(name, id);
+    return id;
 }
 
 // Useful stdlib functions
@@ -27,12 +80,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

@@ -28,7 +28,7 @@ template/hashes.bin    modification tracking for the generator
 
 ```sh
 zig build 2015_03            # run 2015 day 3
-zig build 2015_03 --release-safe
+zig build 2015_03 -Doptimize=ReleaseSafe
 zig build 2015_03 -- -v      # extra args pass through to the program
 zig build install_2015_03    # binary lands in zig-out/bin
 zig build test_2015_03       # run tests inside that day's file

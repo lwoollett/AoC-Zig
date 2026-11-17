@@ -17,7 +17,19 @@ const gpa = util.gpa;
 const data = @embedFile("data/day01.txt");
 
 pub fn main() !void {
-
+    // Part 1: final floor after ( = up, ) = down.
+    var floor: i32 = 0;
+    var basement: i32 = -1;
+    for (data, 0..) |c, i| {
+        floor += switch (c) {
+            '(' => 1,
+            ')' => -1,
+            else => 0,
+        };
+        if (basement == -1 and floor == -1) basement = @intCast(i + 1);
+    }
+    print("part 1: {d}\n", .{floor});
+    print("part 2: {d}\n", .{basement});
 }
 
 // Useful stdlib functions
@@ -27,12 +39,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;
