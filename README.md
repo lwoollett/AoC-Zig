@@ -103,6 +103,20 @@ MCP tools (same names as the original): `GetAocProgress`, `SubmitAnswer`, `GetIn
 { "mcpServers": { "aoc": { "command": "<repo>/zig-out/bin/aoc-mcp" } } }
 ```
 
+## JADE answer schema (tools/jade/aoc2015.scm)
+
+For the bit: the 2015 answers as JADE managed objects, with a JADE unit-test harness — validated by the [zom](../zom) JIZZ runtime (a Zig reimplementation of the JADE runtime running `.scm` schemas directly).
+
+```sh
+~/repos/zom/zig-out/bin/zom-jizz tools/jade/aoc2015.scm --db /tmp/aoc2015.db \
+  --exec 'call JadeScript.populateData; commit'
+~/repos/zom/zig-out/bin/zom-jizz tools/jade/aoc2015.scm --db /tmp/aoc2015.db \
+  --exec 'call JadeScript.runTests'
+# => "all 49 assertions passed"
+```
+
+Schema: `AocController` → `Year` → `Day` → `Part` (answer, correct), member-key dicts (`YearByNumber`/`DayByNumber`/`PartByNumber`), explicit inverses. `AocTestCase`/`AnswerTests` are a transient JadeTestCase-style harness (`check`/`report`); when solvers get ported to JADE methods, `populateData` swaps to computing answers and the same 49 assertions validate them.
+
 ## When 2027 starts
 
 Bump `last_year` in **both** `build.zig` and `template/generate.zig`, then
