@@ -38,7 +38,10 @@ zig build test               # all tests, all years (one binary)
 zig build run_all            # everything, every year
 ```
 
-Add your puzzle input at `src/<year>/data/dayNN.txt`; the day file already
+Puzzle inputs are **gitignored** (AoC asks that personal inputs not be
+published). Fetch yours into `src/<year>/data/dayNN.txt` — e.g.
+`./zig-out/bin/aoc-mcp input 2016 1 > src/2016/data/day01.txt` — before
+building days. The day file already
 declares `const data = @embedFile("data/dayNN.txt")`, which only loads if you
 actually reference `data` (no input file needed yet).
 
