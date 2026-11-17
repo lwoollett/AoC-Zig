@@ -62,6 +62,22 @@ pub fn build(b: *std.Build) void {
         test_util.dependOn(&cmd.step);
     }
 
+    // aoc-mcp: MCP server + CLI for adventofcode.com — a Zig port of
+    // github.com/mazharenko/aoc-mcp (stdio MCP, HTTP submission).
+    {
+        const exe = b.addExecutable(.{
+            .name = "aoc-mcp",
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("tools/aoc-mcp/main.zig"),
+                .target = target,
+                .optimize = mode,
+            }),
+        });
+        const install = b.addInstallArtifact(exe, .{});
+        const step = b.step("aoc-mcp", "Build the Advent of Code MCP server/CLI");
+        step.dependOn(&install.step);
+    }
+
     // One exe + steps per (year, day). Steps:
     //   zig build 2015_03          run that day (`-- args` pass through)
     //   zig build install_2015_03  install the binary to zig-out/bin

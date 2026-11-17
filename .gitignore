@@ -3,3 +3,4 @@ zig-out/
 .DS_Store
 *.db
 *.db.events.log
+.aoc_session

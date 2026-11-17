@@ -84,6 +84,25 @@ pub fn main() !void {
 }
 ```
 
+## aoc-mcp (tools/aoc-mcp/)
+
+A Zig reimplementation of [mazharenko/aoc-mcp](https://github.com/mazharenko/aoc-mcp) — an MCP server for adventofcode.com — with a CLI mode bolted on. Built with `zig build aoc-mcp` (binary: `zig-out/bin/aoc-mcp`).
+
+```sh
+./zig-out/bin/aoc-mcp progress 2015            # star count for a year
+./zig-out/bin/aoc-mcp input 2015 1              # personal puzzle input
+./zig-out/bin/aoc-mcp submit 2015 2 1 1606483   # submit; waits out rate limits
+./zig-out/bin/aoc-mcp                            # MCP server over stdio
+```
+
+Session resolution: `--session <cookie>` flag, `$AOC_SESSION`, `$SESSION_COOKIE`, or a `.aoc_session` file in the cwd (gitignored — the cookie is a secret, never commit it).
+
+MCP tools (same names as the original): `GetAocProgress`, `SubmitAnswer`, `GetInputResource`, plus the `aocinput://{year}/{day}` resource template. VS Code/Claude config:
+
+```json
+{ "mcpServers": { "aoc": { "command": "<repo>/zig-out/bin/aoc-mcp" } } }
+```
+
 ## When 2027 starts
 
 Bump `last_year` in **both** `build.zig` and `template/generate.zig`, then

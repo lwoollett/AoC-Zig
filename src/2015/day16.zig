@@ -27,7 +27,7 @@ const Thing = enum {
     fn fromName(s: []const u8) ?Thing {
         const info = @typeInfo(Thing).@"enum";
         inline for (info.field_names, 0..) |name, i| {
-            if (std.mem.eql(u8, s, name)) return @enumFromInt(i);
+            if (std.mem.eql(u8, s, name)) return @fromBackingInt(@intCast(i));
         }
         return null;
     }
@@ -48,7 +48,7 @@ const detected = [_]i64{
 };
 
 fn matches(t: Thing, count: i64, retroencabulator: bool) bool {
-    const idx = @intFromEnum(t);
+    const idx = @backingInt(t);
     const known = detected[idx];
     if (!retroencabulator) return count == known;
     return switch (t) {

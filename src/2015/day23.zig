@@ -36,19 +36,19 @@ pub fn main() !void {
         const op = it.next().?;
         const instr: Instr =
             if (std.mem.eql(u8, op, "hlf"))
-            .{ .hlf = reg(it.next().?) }
-        else if (std.mem.eql(u8, op, "tpl"))
-            .{ .tpl = reg(it.next().?) }
-        else if (std.mem.eql(u8, op, "inc"))
-            .{ .inc = reg(it.next().?) }
-        else if (std.mem.eql(u8, op, "jmp"))
-            .{ .jmp = parseOffset(it.next().?) }
-        else if (std.mem.eql(u8, op, "jie"))
-            .{ .jie = .{ .r = reg(it.next().?), .off = parseOffset(it.next().?) } }
-        else if (std.mem.eql(u8, op, "jio"))
-            .{ .jio = .{ .r = reg(it.next().?), .off = parseOffset(it.next().?) } }
-        else
-            unreachable;
+                .{ .hlf = reg(it.next().?) }
+            else if (std.mem.eql(u8, op, "tpl"))
+                .{ .tpl = reg(it.next().?) }
+            else if (std.mem.eql(u8, op, "inc"))
+                .{ .inc = reg(it.next().?) }
+            else if (std.mem.eql(u8, op, "jmp"))
+                .{ .jmp = parseOffset(it.next().?) }
+            else if (std.mem.eql(u8, op, "jie"))
+                .{ .jie = .{ .r = reg(it.next().?), .off = parseOffset(it.next().?) } }
+            else if (std.mem.eql(u8, op, "jio"))
+                .{ .jio = .{ .r = reg(it.next().?), .off = parseOffset(it.next().?) } }
+            else
+                unreachable;
         try instrs.append(gpa, instr);
     }
 
