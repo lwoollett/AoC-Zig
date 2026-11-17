@@ -4,3 +4,4 @@ zig-out/
 *.db
 *.db.events.log
 .aoc_session
+src/*/data/day*.txt
