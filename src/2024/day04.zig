@@ -8,16 +8,74 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day04.txt");
 
-pub fn main() !void {
+const gw = 200;
+const gh = 200;
+var grid: [gh][gw]u8 = @splat(@splat('.'));
+var h: usize = 0;
+var w: usize = 0;
 
+fn at(x: i64, y: i64) u8 {
+    if (x < 0 or y < 0 or x >= w or y >= h) return '.';
+    return grid[@intCast(y)][@intCast(x)];
+}
+
+fn countXmas(x: i64, y: i64) u32 {
+    const dirs = [8][2]i64{
+        .{ 1, 0 },  .{ -1, 0 }, .{ 0, 1 },  .{ 0, -1 },
+        .{ 1, 1 },  .{ 1, -1 }, .{ -1, 1 }, .{ -1, -1 },
+    };
+    var count: u32 = 0;
+    for (dirs) |d| {
+        if (at(x + d[0], y + d[1]) == 'M' and
+            at(x + 2 * d[0], y + 2 * d[1]) == 'A' and
+            at(x + 3 * d[0], y + 3 * d[1]) == 'S')
+        {
+            count += 1;
+        }
+    }
+    return count;
+}
+
+fn isXMas(x: i64, y: i64) bool {
+    if (at(x, y) != 'A') return false;
+    // two diagonal MAS/SAM pairs
+    const d1 = [2][2]i64{ .{ -1, -1 }, .{ 1, 1 } };
+    const d2 = [2][2]i64{ .{ -1, 1 }, .{ 1, -1 } };
+    inline for (.{ d1, d2 }) |pair| {
+        const a = at(x + pair[0][0], y + pair[0][1]);
+        const b = at(x + pair[1][0], y + pair[1][1]);
+        if (!((a == 'M' and b == 'S') or (a == 'S' and b == 'M'))) return false;
+    }
+    return true;
+}
+
+pub fn main() !void {
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        @memcpy(grid[h][0..line.len], line);
+        w = @max(w, line.len);
+        h += 1;
+    }
+
+    var total1: u32 = 0;
+    var total2: u32 = 0;
+    for (0..h) |y| {
+        for (0..w) |x| {
+            if (grid[y][x] == 'X') {
+                total1 += countXmas(@intCast(x), @intCast(y));
+            }
+            if (isXMas(@intCast(x), @intCast(y))) {
+                total2 += 1;
+            }
+        }
+    }
+    print("part 1: {d}\n", .{total1});
+    print("part 2: {d}\n", .{total2});
 }
 
 // Useful stdlib functions
@@ -27,12 +85,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

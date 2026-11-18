@@ -13,8 +13,12 @@ const gpa = util.gpa;
 const data = @embedFile("data/day22.txt");
 
 const Brick = struct {
-    x0: i64, y0: i64, z0: i64,
-    x1: i64, y1: i64, z1: i64,
+    x0: i64,
+    y0: i64,
+    z0: i64,
+    x1: i64,
+    y1: i64,
+    z1: i64,
 };
 
 var bricks: List(Brick) = .empty;
