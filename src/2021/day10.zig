@@ -8,16 +8,79 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day10.txt");
 
-pub fn main() !void {
+fn closes(open: u8, close: u8) bool {
+    return (open == '(' and close == ')') or
+        (open == '[' and close == ']') or
+        (open == '{' and close == '}') or
+        (open == '<' and close == '>');
+}
 
+fn corruptScore(c: u8) u64 {
+    return switch (c) {
+        ')' => 3,
+        ']' => 57,
+        '}' => 1197,
+        else => 25137,
+    };
+}
+
+fn closer(open: u8) u8 {
+    return switch (open) {
+        '(' => ')',
+        '[' => ']',
+        '{' => '}',
+        else => '>',
+    };
+}
+
+fn autocompleteScore(c: u8) u64 {
+    return switch (c) {
+        ')' => 1,
+        ']' => 2,
+        '}' => 3,
+        else => 4,
+    };
+}
+
+pub fn main() !void {
+    var total_corrupt: u64 = 0;
+    var scores: List(u64) = .empty;
+    defer scores.deinit(gpa);
+
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        var stack: [256]u8 = undefined;
+        var depth: usize = 0;
+        var corrupt = false;
+        for (line) |c| {
+            if (c == '(' or c == '[' or c == '{' or c == '<') {
+                stack[depth] = c;
+                depth += 1;
+            } else {
+                if (depth == 0 or !closes(stack[depth - 1], c)) {
+                    total_corrupt += corruptScore(c);
+                    corrupt = true;
+                    break;
+                }
+                depth -= 1;
+            }
+        }
+        if (corrupt) continue;
+        var score: u64 = 0;
+        while (depth > 0) {
+            depth -= 1;
+            score = score * 5 + autocompleteScore(closer(stack[depth]));
+        }
+        try scores.append(gpa, score);
+    }
+
+    print("part 1: {d}\n", .{total_corrupt});
+    std.mem.sort(u64, scores.items, {}, comptime std.sort.asc(u64));
+    print("part 2: {d}\n", .{scores.items[scores.items.len / 2]});
 }
 
 // Useful stdlib functions
@@ -27,12 +90,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;

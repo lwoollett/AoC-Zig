@@ -8,16 +8,95 @@ const BitSet = std.DynamicBitSet;
 const util = @import("util");
 const gpa = util.gpa;
 
-// The zom Managed Object Runtime (../zom) is available to every day.
-// To use managed objects, uncomment the import below (or reference zom
-// anywhere in this file) and rebuild — the day is then compiled and
-// linked with zom and its vendored SQLite automatically:
 // const zom = @import("zom");
 
 const data = @embedFile("data/day08.txt");
 
-pub fn main() !void {
+fn segsOf(s: []const u8) u8 {
+    var m: u8 = 0;
+    for (s) |c| {
+        m |= @as(u8, 1) << @intCast(c - 'a');
+    }
+    return m;
+}
 
+fn popcount7(v: u8) u32 {
+    return @popCount(v);
+}
+
+pub fn main() !void {
+    var total1: u64 = 0;
+    var total2: u64 = 0;
+
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        const bar = indexOf(u8, line, '|').?;
+        const sig_part = line[0..bar];
+        const out_part = line[bar + 2 ..];
+
+        var sigs: List(u8) = .empty;
+        defer sigs.deinit(gpa);
+        var it = tokenizeSca(u8, sig_part, ' ');
+        while (it.next()) |tok| {
+            try sigs.append(gpa, segsOf(tok));
+        }
+
+        var outputs: List(u8) = .empty;
+        defer outputs.deinit(gpa);
+        var oit = tokenizeSca(u8, out_part, ' ');
+        while (oit.next()) |tok| {
+            const v = segsOf(tok);
+            try outputs.append(gpa, v);
+            const n = popcount7(v);
+            if (n == 2 or n == 3 or n == 4 or n == 7) total1 += 1;
+        }
+
+        // decode mapping
+        var one: u8 = 0;
+        var four: u8 = 0;
+        for (sigs.items) |s| {
+            switch (popcount7(s)) {
+                2 => one = s,
+                4 => four = s,
+                else => {},
+            }
+        }
+        var num: u64 = 0;
+        for (outputs.items) |o| {
+            var d: u8 = 0;
+            switch (popcount7(o)) {
+                2 => d = 1,
+                3 => d = 7,
+                4 => d = 4,
+                7 => d = 8,
+                5 => {
+                    // 2, 3, 5
+                    if (o & one == one) {
+                        d = 3; // superset of 1
+                    } else if (popcount7(o & four) == 3) {
+                        d = 5;
+                    } else {
+                        d = 2;
+                    }
+                },
+                6 => {
+                    // 0, 6, 9
+                    if (o & four == four) {
+                        d = 9;
+                    } else if (o & one == one) {
+                        d = 0;
+                    } else {
+                        d = 6;
+                    }
+                },
+                else => {},
+            }
+            num = num * 10 + d;
+        }
+        total2 += num;
+    }
+    print("part 1: {d}\n", .{total1});
+    print("part 2: {d}\n", .{total2});
 }
 
 // Useful stdlib functions
@@ -27,12 +106,12 @@ const tokenizeSca = std.mem.tokenizeScalar;
 const splitAny = std.mem.splitAny;
 const splitSeq = std.mem.splitSequence;
 const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.indexOfScalar;
-const indexOfAny = std.mem.indexOfAny;
-const indexOfStr = std.mem.indexOfPosLinear;
-const lastIndexOf = std.mem.lastIndexOfScalar;
-const lastIndexOfAny = std.mem.lastIndexOfAny;
-const lastIndexOfStr = std.mem.lastIndexOfLinear;
+const indexOf = std.mem.findScalar;
+const indexOfAny = std.mem.findAny;
+const indexOfStr = std.mem.findPos;
+const lastIndexOf = std.mem.findScalarLast;
+const lastIndexOfAny = std.mem.findLastAny;
+const lastIndexOfStr = std.mem.findLastLinear;
 const trim = std.mem.trim;
 const sliceMin = std.mem.min;
 const sliceMax = std.mem.max;
@@ -49,4 +128,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be updated.
+// Only unmodified days will be modified.
