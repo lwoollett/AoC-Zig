@@ -24,6 +24,31 @@ template/generate.zig  regenerates stubs; only overwrites unmodified days
 template/hashes.bin    modification tracking for the generator
 ```
 
+## Performance
+
+After the optimization pass every day runs in well under a second in
+`ReleaseSafe` (the whole 11-year suite completes in ~10s; `tools/bench_all.py`
+sweeps all binaries and flags anything over 1s). Notable fixes:
+
+| Day | Was | Now | Root cause |
+|---|---|---|---|
+| 2019 all intcode | ~1 min/yr | 1.2s/yr | VM rewrite |
+| 2021 d24 MONAD | 207s | 4.5s | dedup + reuse (state space is inherently ~6M) |
+| 2022 d23 elves | 59s | 0.3s | tombstone probe decay (see below) |
+| 2022 d24 blizzards | 7.5s | 0.07s | occupancy bitsets per period tick |
+| 2022 d15/16, 2021 d19/23 | 8-9s | <1s | per-iteration map churn; missing bound |
+| 2018 d22 | 12s | 0.12s | linear-scan "heap" |
+| 2024 d6/d24 | 8-85s | <1s | memset per candidate; undefined tail reads |
+| 2016 d14 | 5.4s | — | 2016 rounds of MD5 per salt; inherent, left alone |
+
+The 2022 d23 lesson is worth remembering: `remove` + `put` on a nearly-full
+`AutoHashMap` never clears tombstones, so probe chains grow until a slot with
+no tombstone prefix is found — per-op cost crept up ~60x over 965 rounds.
+Rebuilding the table from a list each round (clean table, zero tombstones)
+was both faster and simpler. Related: `util.gpa` is the raw page allocator
+in release builds — the Debug allocator's quarantine masks use-after-free
+(one real bug in 2025 d12 surfaced this way).
+
 ## Everyday commands
 
 ```sh
