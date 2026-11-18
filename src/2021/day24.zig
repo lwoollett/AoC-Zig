@@ -68,7 +68,8 @@ const Entry = struct { z: i64, prefix: u64 };
 /// Open-addressing dedup table (z >= 0 domain; -1 = empty).
 const ZTable = struct {
     keys: []i64,
-    vals: []u64,
+    // vals[i] = index into the out list of the entry owning keys[i]
+    vals: []usize,
     mask: usize,
     count: usize,
 
@@ -76,7 +77,7 @@ const ZTable = struct {
         var size: usize = 1;
         while (size < cap * 2) size <<= 1;
         const keys = try alloc.alloc(i64, size);
-        const vals = try alloc.alloc(u64, size);
+        const vals = try alloc.alloc(usize, size);
         @memset(keys, -1);
         return .{ .keys = keys, .vals = vals, .mask = size - 1, .count = 0 };
     }
@@ -86,7 +87,7 @@ const ZTable = struct {
         alloc.free(self.vals);
     }
 
-    /// keep the best prefix (max or min) per key; returns deduped entries
+    /// keep the best prefix (max or min) per z; single pass, no raw list
     fn insertAll(self: *ZTable, entries: []const Entry, comptime maximize: bool, out: *List(Entry)) !void {
         for (entries) |e| {
             var h: usize = @bitCast(@as(u64, @intCast(e.z)) *% 0x9E3779B97F4A7C15);
@@ -95,26 +96,20 @@ const ZTable = struct {
                 const k = self.keys[h];
                 if (k == -1) {
                     self.keys[h] = e.z;
-                    self.vals[h] = e.prefix;
+                    self.vals[h] = out.items.len;
                     try out.append(gpa, e);
                     self.count += 1;
                     break;
                 }
                 if (k == e.z) {
-                    if ((maximize and e.prefix > self.vals[h]) or (!maximize and e.prefix < self.vals[h])) {
-                        self.vals[h] = e.prefix;
+                    const cur = &out.items[self.vals[h]];
+                    if ((maximize and e.prefix > cur.prefix) or (!maximize and e.prefix < cur.prefix)) {
+                        cur.prefix = e.prefix;
                     }
                     break;
                 }
                 h = (h + 1) & self.mask;
             }
-        }
-        // second pass: write back the best prefixes to the out entries
-        for (out.items) |*o| {
-            var h: usize = @bitCast(@as(u64, @intCast(o.z)) *% 0x9E3779B97F4A7C15);
-            h &= self.mask;
-            while (self.keys[h] != o.z) h = (h + 1) & self.mask;
-            o.prefix = self.vals[h];
         }
     }
 };
@@ -124,22 +119,55 @@ fn solveModel(blocks: []const Block, comptime maximize: bool) !u64 {
     defer states.deinit(gpa);
     var next: List(Entry) = .empty;
     defer next.deinit(gpa);
-    var raw: List(Entry) = .empty;
-    defer raw.deinit(gpa);
     try states.append(gpa, .{ .z = 0, .prefix = 0 });
 
-    for (blocks) |b| {
-        raw.clearRetainingCapacity();
+    // z can shrink at most 26x per remaining pop block (div 26), and pushes
+    // only grow it — so z >= 26^pops_after can never reach 0. Prune those.
+    var pops_after: [15]u32 = @splat(0);
+    {
+        var i: usize = blocks.len - 1;
+        while (true) : (i -= 1) {
+            pops_after[i] = pops_after[i + 1] + @intFromBool(blocks[i].div == 26);
+            if (i == 0) break;
+        }
+    }
+    var z_cap: [15]i64 = @splat(0);
+    for (0..blocks.len + 1) |i| {
+        var cap: i64 = 1;
+        for (0..pops_after[i]) |_| cap *= 26;
+        z_cap[i] = cap;
+    }
+
+    var table: ?ZTable = null;
+    defer if (table) |*t| t.deinit(gpa);
+    for (blocks, 0..) |b, bi| {
+        if (table == null or table.?.mask + 1 < states.items.len * 9 * 2) {
+            if (table) |*t| t.deinit(gpa);
+            table = try ZTable.init(gpa, states.items.len * 9);
+        } else {
+            @memset(table.?.keys, -1);
+            table.?.count = 0;
+        }
+        next.clearRetainingCapacity();
         for (states.items) |st| {
             var w: i64 = 1;
             while (w <= 9) : (w += 1) {
-                try raw.append(gpa, .{ .z = applyBlock(b, st.z, w), .prefix = st.prefix * 10 + @as(u64, @intCast(w)) });
+                const e = Entry{ .z = applyBlock(b, st.z, w), .prefix = st.prefix * 10 + @as(u64, @intCast(w)) };
+                try table.?.insertAll(&.{e}, maximize, &next);
             }
         }
-        var table = try ZTable.init(gpa, raw.items.len);
-        defer table.deinit(gpa);
-        next.clearRetainingCapacity();
-        try table.insertAll(raw.items, maximize, &next);
+        // prune dead z values (can't divide down to 0 in remaining pops)
+        const cap = z_cap[bi + 1];
+        if (cap < (1 << 62)) {
+            var w: usize = 0;
+            for (states.items) |st| {
+                if (st.z < cap) {
+                    states.items[w] = st;
+                    w += 1;
+                }
+            }
+            states.shrinkRetainingCapacity(w);
+        }
         const tmp = states;
         states = next;
         next = tmp;

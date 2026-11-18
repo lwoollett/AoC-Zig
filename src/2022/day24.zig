@@ -20,17 +20,42 @@ var bliz0: List([3]i32) = .empty; // x, y, dir (0=R,1=D,2=L,3=U)
 const dx = [4]i32{ 1, 0, -1, 0 };
 const dy = [4]i32{ 0, 1, 0, -1 };
 
-fn blizzardAt(t: usize, x: usize, y: usize) bool {
-    // a cell is blocked if any blizzard is there at time t
-    for (bliz0.items) |b| {
-        var bx = b[0];
-        var by = b[1];
-        // advance mod the inner area
-        bx = @mod(bx + dx[@intCast(b[2])] * @as(i32, @intCast(t)) - 1, @as(i32, @intCast(w - 2))) + 1;
-        by = @mod(by + dy[@intCast(b[2])] * @as(i32, @intCast(t)) - 1, @as(i32, @intCast(h - 2))) + 1;
-        if (bx == x and by == y) return true;
+// occupancy bitsets per time step: blizzards repeat with period
+// lcm(w-2, h-2); precompute once instead of scanning every blizzard
+// per neighbor check in the BFS.
+var occ: []u64 = &.{}; // [period][w*h/64] bit per cell
+var period: usize = 0;
+
+fn buildOccupancy() !void {
+    const wx: usize = w - 2;
+    const hx: usize = h - 2;
+    var g: usize = wx;
+    var a: usize = hx;
+    while (a != 0) {
+        const tmp = g % a;
+        g = a;
+        a = tmp;
     }
-    return false;
+    period = wx / g * hx;
+    const words = (w * h + 63) / 64;
+    occ = try gpa.alloc(u64, period * words);
+    @memset(occ, 0);
+    for (bliz0.items) |b| {
+        var t: usize = 0;
+        while (t < period) : (t += 1) {
+            const bx = @mod(b[0] + dx[@intCast(b[2])] * @as(i32, @intCast(t)) - 1, @as(i32, @intCast(wx))) + 1;
+            const by = @mod(b[1] + dy[@intCast(b[2])] * @as(i32, @intCast(t)) - 1, @as(i32, @intCast(hx))) + 1;
+            const cell = @as(usize, @intCast(by)) * w + @as(usize, @intCast(bx));
+            occ[t * words + cell / 64] |= @as(u64, 1) << @intCast(cell % 64);
+        }
+    }
+}
+
+fn blizzardAt(t: usize, x: usize, y: usize) bool {
+    const words = (w * h + 63) / 64;
+    const tt = t % period;
+    const cell = y * w + x;
+    return occ[tt * words + cell / 64] & (@as(u64, 1) << @intCast(cell % 64)) != 0;
 }
 
 const State = struct { x: usize, y: usize, t: usize };
@@ -84,6 +109,8 @@ pub fn main() !void {
         }
         h += 1;
     }
+
+    try buildOccupancy();
 
     // start: top row gap; goal: bottom row gap
     var sx: usize = 0;

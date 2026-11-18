@@ -87,9 +87,10 @@ pub fn main() !void {
     {
         const limit: i64 = 4000000;
         var y: i64 = 0;
+        var ranges: List([2]i64) = .empty;
+        defer ranges.deinit(gpa);
         while (y <= limit) : (y += 1) {
-            var ranges: List([2]i64) = .empty;
-            defer ranges.deinit(gpa);
+            ranges.clearRetainingCapacity();
             for (sensors.items) |s| {
                 if (excludedRange(s, y)) |r| {
                     try ranges.append(gpa, r);

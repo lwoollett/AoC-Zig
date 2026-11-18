@@ -16,7 +16,7 @@ const n = 300;
 
 fn power(x: usize, y: usize, serial: i64) i64 {
     const rack: i64 = @intCast(x + 10);
-    var p = rack * (@as(i64, @intCast(y)) + rack) + serial;
+    var p = rack * @as(i64, @intCast(y)) + serial;
     p *= rack;
     return @rem(@divTrunc(p, 100), 10) - 5;
 }

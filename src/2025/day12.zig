@@ -59,8 +59,10 @@ fn genOrients(shape_idx: usize, base: []const []const u8) !void {
             defer next.deinit(gpa);
             var ny: usize = 0;
             while (ny < ww) : (ny += 1) {
+                // NOTE: rows must outlive this loop — `next` holds them until
+                // the persist loop below dupes them. (deferring the free here
+                // was a use-after-free that the Debug allocator masked.)
                 const row = try gpa.alloc(u8, hh);
-                defer gpa.free(row);
                 var nx: usize = 0;
                 while (nx < hh) : (nx += 1) {
                     // new[ny][nx] = cur[hh-1-nx][ny]
@@ -73,7 +75,9 @@ fn genOrients(shape_idx: usize, base: []const []const u8) !void {
             const persist = try gpa.alloc([]u8, next.items.len);
             for (next.items, 0..) |r, i| {
                 persist[i] = try gpa.dupe(u8, r);
+                gpa.free(r);
             }
+            next.clearRetainingCapacity();
             cur = persist;
         }
         // reflect horizontally for the second rep
