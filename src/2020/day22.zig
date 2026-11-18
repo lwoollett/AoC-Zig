@@ -147,4 +147,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be modified.
+// Only unmodified days will be updated.

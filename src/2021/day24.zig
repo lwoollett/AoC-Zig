@@ -14,8 +14,8 @@ const data = @embedFile("data/day24.txt");
 
 const Block = struct {
     div: i64 = 1,
-    add_x: i64 = 0, // "add x N" after "mod x 26"
-    add_y: i64 = 0, // last "add y N"
+    add_x: i64 = 0,
+    add_y: i64 = 0,
 };
 
 /// Transition for the standard MONAD block:
@@ -63,51 +63,97 @@ fn parseBlocks() ![]Block {
     return blocks.toOwnedSlice(gpa);
 }
 
-fn solveModel(blocks: []const Block, comptime maximize: bool) !u64 {
-    // level-by-level: z -> best prefix (max or min numeric prefix)
-    var states = Map(i64, u64).init(gpa);
-    defer states.deinit();
-    try states.put(0, 0);
+const Entry = struct { z: i64, prefix: u64 };
 
-    var level: usize = 0;
-    while (level < blocks.len) : (level += 1) {
-        var next = Map(i64, u64).init(gpa);
-        var it = states.iterator();
-        while (it.next()) |e| {
-            const z = e.key_ptr.*;
-            const prefix = e.value_ptr.*;
-            var digit: i64 = if (maximize) 9 else 1;
-            const step: i64 = if (maximize) -1 else 1;
-            while (digit >= 1 and digit <= 9) : (digit += step) {
-                const d: u64 = @intCast(digit);
-                const nz = applyBlock(blocks[level], z, @intCast(d));
-                const np = prefix * 10 + d;
-                const gop = try next.getOrPut(nz);
-                if (!gop.found_existing) {
-                    gop.value_ptr.* = np;
-                } else if (maximize) {
-                    gop.value_ptr.* = @max(gop.value_ptr.*, np);
-                } else {
-                    gop.value_ptr.* = @min(gop.value_ptr.*, np);
+/// Open-addressing dedup table (z >= 0 domain; -1 = empty).
+const ZTable = struct {
+    keys: []i64,
+    vals: []u64,
+    mask: usize,
+    count: usize,
+
+    fn init(alloc: Allocator, cap: usize) !ZTable {
+        var size: usize = 1;
+        while (size < cap * 2) size <<= 1;
+        const keys = try alloc.alloc(i64, size);
+        const vals = try alloc.alloc(u64, size);
+        @memset(keys, -1);
+        return .{ .keys = keys, .vals = vals, .mask = size - 1, .count = 0 };
+    }
+
+    fn deinit(self: *ZTable, alloc: Allocator) void {
+        alloc.free(self.keys);
+        alloc.free(self.vals);
+    }
+
+    /// keep the best prefix (max or min) per key; returns deduped entries
+    fn insertAll(self: *ZTable, entries: []const Entry, comptime maximize: bool, out: *List(Entry)) !void {
+        for (entries) |e| {
+            var h: usize = @bitCast(@as(u64, @intCast(e.z)) *% 0x9E3779B97F4A7C15);
+            h &= self.mask;
+            while (true) {
+                const k = self.keys[h];
+                if (k == -1) {
+                    self.keys[h] = e.z;
+                    self.vals[h] = e.prefix;
+                    try out.append(gpa, e);
+                    self.count += 1;
+                    break;
                 }
+                if (k == e.z) {
+                    if ((maximize and e.prefix > self.vals[h]) or (!maximize and e.prefix < self.vals[h])) {
+                        self.vals[h] = e.prefix;
+                    }
+                    break;
+                }
+                h = (h + 1) & self.mask;
             }
         }
-        states.deinit();
+        // second pass: write back the best prefixes to the out entries
+        for (out.items) |*o| {
+            var h: usize = @bitCast(@as(u64, @intCast(o.z)) *% 0x9E3779B97F4A7C15);
+            h &= self.mask;
+            while (self.keys[h] != o.z) h = (h + 1) & self.mask;
+            o.prefix = self.vals[h];
+        }
+    }
+};
+
+fn solveModel(blocks: []const Block, comptime maximize: bool) !u64 {
+    var states: List(Entry) = .empty;
+    defer states.deinit(gpa);
+    var next: List(Entry) = .empty;
+    defer next.deinit(gpa);
+    var raw: List(Entry) = .empty;
+    defer raw.deinit(gpa);
+    try states.append(gpa, .{ .z = 0, .prefix = 0 });
+
+    for (blocks) |b| {
+        raw.clearRetainingCapacity();
+        for (states.items) |st| {
+            var w: i64 = 1;
+            while (w <= 9) : (w += 1) {
+                try raw.append(gpa, .{ .z = applyBlock(b, st.z, w), .prefix = st.prefix * 10 + @as(u64, @intCast(w)) });
+            }
+        }
+        var table = try ZTable.init(gpa, raw.items.len);
+        defer table.deinit(gpa);
+        next.clearRetainingCapacity();
+        try table.insertAll(raw.items, maximize, &next);
+        const tmp = states;
         states = next;
+        next = tmp;
     }
 
-    var best: u64 = if (maximize) 0 else std.math.maxInt(u64);
-    var it = states.iterator();
-    while (it.next()) |e| {
-        if (e.key_ptr.* == 0) {
-            if (maximize) {
-                best = @max(best, e.value_ptr.*);
-            } else {
-                best = @min(best, e.value_ptr.*);
+    var best: ?u64 = null;
+    for (states.items) |st| {
+        if (st.z == 0) {
+            if (best == null or (maximize and st.prefix > best.?) or (!maximize and st.prefix < best.?)) {
+                best = st.prefix;
             }
         }
     }
-    return best;
+    return best orelse error.NoSolution;
 }
 
 pub fn main() !void {
@@ -150,4 +196,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be modified.
+// Only unmodified days will be updated.

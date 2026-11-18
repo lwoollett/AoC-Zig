@@ -29,15 +29,24 @@ const dir_sets = [4][3][2]i32{
     .{ .{ 1, 0 }, .{ 1, -1 }, .{ 1, 1 } }, // E, NE, SE
 };
 
-fn round(pos: *Map(P, void), first_dir: u8) !bool {
-    var proposals = Map(P, P).init(gpa);
-    defer proposals.deinit();
-    var counts = Map(P, u32).init(gpa);
-    defer counts.deinit();
+// reused across rounds — avoids 965x map init/growth churn
+var proposals = Map(P, P).init(std.heap.page_allocator);
+var counts = Map(P, u32).init(std.heap.page_allocator);
+var next_positions = List(P).empty;
 
-    var it = pos.keyIterator();
-    while (it.next()) |e| {
-        const p = e.*;
+fn round(cur: *List(P), pos: *Map(P, void), first_dir: u8) !bool {
+    // rebuild pos from the live list: a clean table every round. The previous
+    // remove/put-per-mover design leaked tombstones into the table, and at
+    // ~95% occupancy every probe (neighbor checks run 12/elf) walked long
+    // tombstone chains — per-op cost grew steadily, ~60x by round 965.
+    pos.clearRetainingCapacity();
+    try pos.ensureTotalCapacity(@intCast(cur.items.len * 2));
+    for (cur.items) |e| try pos.put(e, {});
+
+    proposals.clearRetainingCapacity();
+    counts.clearRetainingCapacity();
+
+    for (cur.items) |p| {
         // any neighbors?
         var any = false;
         for (all_n) |n| {
@@ -63,49 +72,55 @@ fn round(pos: *Map(P, void), first_dir: u8) !bool {
     }
 
     var moved = false;
-    var pit = proposals.iterator();
-    while (pit.next()) |e| {
-        if (counts.get(e.value_ptr.*).? == 1) {
-            _ = pos.remove(e.key_ptr.*);
-            try pos.put(e.value_ptr.*, {});
-            moved = true;
+    next_positions.clearRetainingCapacity();
+    try next_positions.ensureTotalCapacity(std.heap.page_allocator, cur.items.len);
+    for (cur.items) |p| {
+        // accepted proposal (unique target)?
+        if (proposals.get(p)) |target| {
+            if (counts.get(target).? == 1) {
+                try next_positions.append(std.heap.page_allocator, target);
+                moved = true;
+                continue;
+            }
         }
+        try next_positions.append(std.heap.page_allocator, p);
     }
+    std.mem.swap(List(P), cur, &next_positions);
     return moved;
 }
+
 
 fn runRounds(n: usize) !usize {
     var pos = Map(P, void).init(gpa);
     defer pos.deinit();
-    for (elves.items) |e| {
-        try pos.put(e, {});
-    }
+    var cur = List(P).empty;
+    defer cur.deinit(gpa);
+    try cur.appendSlice(gpa, elves.items);
     var r: usize = 0;
     while (r < n) : (r += 1) {
-        _ = try round(&pos, @intCast(r % 4));
+        _ = try round(&cur, &pos, @intCast(r % 4));
     }
-    // bounding box
+    // bounding box over the live list (pos lags one round by design)
     var lo = P{ std.math.maxInt(i32), std.math.maxInt(i32) };
     var hi = P{ std.math.minInt(i32), std.math.minInt(i32) };
-    var it = pos.keyIterator();
-    while (it.next()) |e| {
+    for (cur.items) |e| {
         lo[0] = @min(lo[0], e[0]);
         lo[1] = @min(lo[1], e[1]);
         hi[0] = @max(hi[0], e[0]);
         hi[1] = @max(hi[1], e[1]);
     }
-    return @intCast((hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) - @as(i32, @intCast(pos.count())));
+    return @intCast((hi[0] - lo[0] + 1) * (hi[1] - lo[1] + 1) - @as(i32, @intCast(cur.items.len)));
 }
 
 fn runUntilStable() !usize {
     var pos = Map(P, void).init(gpa);
     defer pos.deinit();
-    for (elves.items) |e| {
-        try pos.put(e, {});
-    }
+    var cur = List(P).empty;
+    defer cur.deinit(gpa);
+    try cur.appendSlice(gpa, elves.items);
     var r: usize = 0;
     while (true) : (r += 1) {
-        const moved = try round(&pos, @intCast(r % 4));
+        const moved = try round(&cur, &pos, @intCast(r % 4));
         if (!moved) return r + 1;
     }
 }
@@ -153,4 +168,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be modified.
+// Only unmodified days will be updated.

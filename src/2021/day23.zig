@@ -127,11 +127,12 @@ fn solve(start: *const State) !u64 {
     try pq.push(gpa, .{ .cost = 0, .state = start.* });
     try best.put(start.*, 0);
 
+    var moves: List(Move) = .empty;
+    defer moves.deinit(gpa);
     while (pq.pop()) |cur| {
         if (cur.cost > (best.get(cur.state) orelse std.math.maxInt(u64))) continue;
         if (isSolved(&cur.state)) return cur.cost;
-        var moves: List(Move) = .empty;
-        defer moves.deinit(gpa);
+        moves.clearRetainingCapacity();
         try genMoves(&cur.state, &moves);
         for (moves.items) |m| {
             const nc = cur.cost + m.cost;
@@ -235,4 +236,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be modified.
+// Only unmodified days will be updated.

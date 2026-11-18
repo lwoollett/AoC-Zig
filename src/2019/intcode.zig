@@ -21,6 +21,19 @@ pub const VM = struct {
     pub fn init(alloc: std.mem.Allocator, program: []const i64) !VM {
         var vm = VM{ .alloc = alloc };
         try vm.mem.appendSlice(alloc, program);
+        // pre-grow so the step hot path rarely needs ensureMem
+        if (vm.mem.items.len < 8192) {
+            const old = vm.mem.items.len;
+            try vm.mem.resize(alloc, 8192);
+            @memset(vm.mem.items[old..], 0);
+        }
+        return vm;
+    }
+
+    /// Faster init for repeated probes: clone an already-parsed program.
+    pub fn initClone(self: *const VM, alloc: std.mem.Allocator) !VM {
+        var vm = VM{ .alloc = alloc };
+        try vm.mem.appendSlice(alloc, self.mem.items);
         return vm;
     }
 
@@ -85,72 +98,77 @@ pub const VM = struct {
         };
     }
 
-    /// Executes one instruction.
+    /// Executes one instruction. Tight interpreter loop: local slice, hoisted
+    /// pc/rel, inlined operand decode; slice refresh only on memory growth.
     pub fn step(self: *VM) !StepResult {
         if (self.halted) return .halt;
+        var mem = self.mem.items;
         const pc = self.pc;
-        const opcode_raw = try self.read(@intCast(pc));
-        const op: i64 = @mod(opcode_raw, 100);
-        const modes_raw = @divTrunc(opcode_raw, 100);
-        const mode1 = @mod(modes_raw, 10);
-        const mode2 = @mod(@divTrunc(modes_raw, 10), 10);
-        const mode3 = @mod(@divTrunc(modes_raw, 100), 10);
+        const raw = mem[pc];
+        const op: i64 = @mod(raw, 100);
+        const mode1 = @mod(@divTrunc(raw, 100), 10);
+        const mode2 = @mod(@divTrunc(raw, 1000), 10);
+        const mode3 = @mod(@divTrunc(raw, 10000), 10);
 
-        const readParam = struct {
-            fn f(vm: *VM, mode: i64, value: i64) !i64 {
-                if (mode == 1) return value;
-                const addr = if (mode == 2) vm.rel + value else value;
-                return vm.read(addr);
+        // fetch operand value at pc+k, resolving position/relative modes
+        const S = struct {
+            inline fn ld(m: [*]i64, v: i64, mode: i64, rel: i64) i64 {
+                if (mode == 1) return v;
+                const addr = if (mode == 2) rel + v else v;
+                return m[@intCast(addr)];
             }
-        }.f;
-        const writeAddr = struct {
-            fn f(vm: *VM, mode: i64, value: i64) !i64 {
-                return if (mode == 2) vm.rel + value else value;
+            inline fn st(mode: i64, v: i64, rel: i64) i64 {
+                return if (mode == 2) rel + v else v;
             }
-        }.f;
+        };
 
         switch (op) {
-            1, 2 => { // add / mul
-                const a = try readParam(self, mode1, try self.read(@intCast(pc + 1)));
-                const b = try readParam(self, mode2, try self.read(@intCast(pc + 2)));
-                const dst = try writeAddr(self, mode3, try self.read(@intCast(pc + 3)));
-                try self.write(dst, if (op == 1) a + b else a * b);
+            1, 2 => {
+                const a = S.ld(mem.ptr, mem[pc + 1], mode1, self.rel);
+                const b = S.ld(mem.ptr, mem[pc + 2], mode2, self.rel);
+                const dst = S.st(mode3, mem[pc + 3], self.rel);
+                try self.ensureMem(dst);
+                mem = self.mem.items;
+                mem[@intCast(dst)] = if (op == 1) a + b else a * b;
                 self.pc = pc + 4;
             },
-            3 => { // input
+            3 => {
                 if (self.in_head >= self.inputs.items.len) return .need_input;
                 const v = self.inputs.items[self.in_head];
                 self.in_head += 1;
-                const dst = try writeAddr(self, mode1, try self.read(@intCast(pc + 1)));
-                try self.write(dst, v);
+                const dst = S.st(mode1, mem[pc + 1], self.rel);
+                try self.ensureMem(dst);
+                mem = self.mem.items;
+                mem[@intCast(dst)] = v;
                 self.pc = pc + 2;
             },
-            4 => { // output
-                const v = try readParam(self, mode1, try self.read(@intCast(pc + 1)));
+            4 => {
+                const v = S.ld(mem.ptr, mem[pc + 1], mode1, self.rel);
                 try self.outputs.append(self.alloc, v);
                 self.pc = pc + 2;
                 return .output;
             },
-            5, 6 => { // jump-if-(non)zero
-                const cond = try readParam(self, mode1, try self.read(@intCast(pc + 1)));
-                const target = try readParam(self, mode2, try self.read(@intCast(pc + 2)));
+            5, 6 => {
+                const cond = S.ld(mem.ptr, mem[pc + 1], mode1, self.rel);
+                const target = S.ld(mem.ptr, mem[pc + 2], mode2, self.rel);
                 const jump = if (op == 5) cond != 0 else cond == 0;
                 self.pc = if (jump) @intCast(target) else pc + 3;
             },
-            7, 8 => { // less-than / equals
-                const a = try readParam(self, mode1, try self.read(@intCast(pc + 1)));
-                const b = try readParam(self, mode2, try self.read(@intCast(pc + 2)));
-                const dst = try writeAddr(self, mode3, try self.read(@intCast(pc + 3)));
+            7, 8 => {
+                const a = S.ld(mem.ptr, mem[pc + 1], mode1, self.rel);
+                const b = S.ld(mem.ptr, mem[pc + 2], mode2, self.rel);
+                const dst = S.st(mode3, mem[pc + 3], self.rel);
                 const v: i64 = if (op == 7)
                     @intFromBool(a < b)
                 else
                     @intFromBool(a == b);
-                try self.write(dst, v);
+                try self.ensureMem(dst);
+                mem = self.mem.items;
+                mem[@intCast(dst)] = v;
                 self.pc = pc + 4;
             },
-            9 => { // adjust relative base
-                const v = try readParam(self, mode1, try self.read(@intCast(pc + 1)));
-                self.rel += v;
+            9 => {
+                self.rel += S.ld(mem.ptr, mem[pc + 1], mode1, self.rel);
                 self.pc = pc + 2;
             },
             99 => {

@@ -342,10 +342,6 @@ fn runOnce() !bool {
     for (inventory.items) |item| {
         _ = try command(try std.fmt.allocPrint(gpa, "drop {s}", .{item}));
     }
-    std.debug.print("\n", .{});
-    std.debug.print("[halted? {}]\n", .{vm.halted});
-    const invresp = try command("inv");
-    std.debug.print("[inv] {s}\n", .{if (invresp.len > 60) invresp[0..60] else invresp});
 
     // subset search: try carrying each subset (singles first)
     const n = inventory.items.len;

@@ -53,24 +53,25 @@ pub fn main() !void {
 
     // Part 2: 5 workers, 60 + index seconds per step.
     {
-        var done: u32 = 0;
+        var done: u32 = 0; // FINISHED steps (dependency gate)
+        var claimed: u32 = 0; // finished OR in progress (no double-claim)
         var working: [5]?u8 = @splat(null);
         var remain: [5]u32 = @splat(0);
         var t: u32 = 0;
         var finished: u32 = 0;
         while (finished < n_steps) {
-            // pick up new steps (alphabetical)
+            // pick up new steps (alphabetical); dependencies must be FINISHED
             var s: u5 = 0;
             while (s < 26) : (s += 1) {
                 const bit = @as(u32, 1) << s;
-                if (present & bit == 0 or done & bit != 0) continue;
+                if (present & bit == 0 or claimed & bit != 0) continue;
                 if (deps[s] & ~done != 0) continue;
                 // free worker?
                 for (&working, 0..) |*wk, wi| {
                     if (wk.* == null) {
                         wk.* = @intCast(s);
                         remain[wi] = 61 + @as(u32, s);
-                        done |= bit; // claimed
+                        claimed |= bit;
                         break;
                     }
                 }
@@ -81,6 +82,8 @@ pub fn main() !void {
                     remain[wi] -= 1;
                     if (remain[wi] == 0) {
                         finished += 1;
+                        const step = wk.*.?;
+                        done |= @as(u32, 1) << @as(u5, @intCast(step));
                         wk.* = null;
                     }
                 }

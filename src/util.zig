@@ -7,7 +7,14 @@ const BitSet = std.DynamicBitSet;
 const Str = []const u8;
 
 var gpa_impl: std.heap.DebugAllocator(.{}) = .init;
-pub const gpa = gpa_impl.allocator();
+
+/// Debug allocator in debug builds; raw page allocator in release builds
+/// (DebugAllocator's safety bookkeeping dwarfs hot-loop allocation costs).
+const build_mode: std.builtin.OptimizeMode = @import("builtin").mode;
+pub const gpa = if (build_mode == .debug)
+    gpa_impl.allocator()
+else
+    std.heap.page_allocator;
 
 // Add utility functions here
 

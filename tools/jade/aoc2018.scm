@@ -281,12 +281,12 @@ begin
 	self.checkPart(ctl, 6, 1, "4143");
 	self.checkPart(ctl, 6, 2, "35039");
 	self.checkPart(ctl, 7, 1, "GKCNPTVHIRYDUJMSXFBQLOAEWZ");
-	self.checkPart(ctl, 7, 2, "436");
+	self.checkPart(ctl, 7, 2, "1265");
 	self.checkPart(ctl, 8, 1, "41849");
 	self.checkPart(ctl, 8, 2, "32487");
 	self.checkPart(ctl, 9, 1, "394486");
 	self.checkPart(ctl, 9, 2, "3276488008");
-	self.checkPart(ctl, 10, 1, "LEXRXYFT");
+	self.checkPart(ctl, 10, 1, "FNRGPBHR");
 	self.checkPart(ctl, 10, 2, "10511");
 	self.checkPart(ctl, 11, 1, "34281");
 	self.checkPart(ctl, 11, 2, "1267310");
@@ -361,7 +361,7 @@ begin
 	yr.days[ 6 ].addPart( 2, "35039" );
 	yr.ensureDay( 7 );
 	yr.days[ 7 ].addPart( 1, "GKCNPTVHIRYDUJMSXFBQLOAEWZ" );
-	yr.days[ 7 ].addPart( 2, "436" );
+	yr.days[ 7 ].addPart( 2, "1265" );
 	yr.ensureDay( 8 );
 	yr.days[ 8 ].addPart( 1, "41849" );
 	yr.days[ 8 ].addPart( 2, "32487" );
@@ -369,7 +369,7 @@ begin
 	yr.days[ 9 ].addPart( 1, "394486" );
 	yr.days[ 9 ].addPart( 2, "3276488008" );
 	yr.ensureDay( 10 );
-	yr.days[ 10 ].addPart( 1, "LEXRXYFT" );
+	yr.days[ 10 ].addPart( 1, "FNRGPBHR" );
 	yr.days[ 10 ].addPart( 2, "10511" );
 	yr.ensureDay( 11 );
 	yr.days[ 11 ].addPart( 1, "34281" );

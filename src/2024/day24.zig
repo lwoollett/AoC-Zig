@@ -12,63 +12,102 @@ const gpa = util.gpa;
 
 const data = @embedFile("data/day24.txt");
 
-const Gate = struct { in1: []const u8, in2: []const u8, op: u8, out: []const u8 };
+// integer-indexed gate graph
+const Gate = struct { in1: u32, in2: u32, op: u8, out: u32 }; // op: 'A','O','X'
 var gates: List(Gate) = .empty;
-var inputs = StrMap(u64).init(std.heap.page_allocator);
+var wire_id = StrMap(u32).init(std.heap.page_allocator);
+var wire_names: List([]const u8) = .empty;
+var input_wires: List(u32) = .empty; // x/y input wire ids (index 2i = x_i? no—stored explicitly)
+var xy_values = StrMap(u64).init(std.heap.page_allocator); // initial x/y/const values
 
-fn evalAll(vals: *StrMap(u64)) !void {
-    // topological: iterate until stable
-    var pending: List(Gate) = .empty;
-    defer pending.deinit(gpa);
-    for (gates.items) |g| {
-        try pending.append(gpa, g);
+fn wireOf(name: []const u8) !u32 {
+    const gop = try wire_id.getOrPut(name);
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(wire_names.items.len);
+        try wire_names.append(gpa, name);
     }
-    var rounds: usize = 0;
-    while (pending.items.len > 0 and rounds < 1000) : (rounds += 1) {
-        var next: List(Gate) = .empty;
-        defer next.deinit(gpa);
-        for (pending.items) |g| {
-            const a = vals.get(g.in1) orelse {
-                try next.append(gpa, g);
-                continue;
-            };
-            const b = vals.get(g.in2) orelse {
-                try next.append(gpa, g);
-                continue;
-            };
+    return gop.value_ptr.*;
+}
+
+// evaluation buffers + precomputed ids (no string work in the hot path)
+var values: []u64 = &.{};
+var init_ids: List(u32) = .empty;
+var init_vals: List(u64) = .empty;
+var x_ids: [46]u32 = @splat(0);
+var y_ids: [46]u32 = @splat(0);
+var z_ids: [46]u32 = @splat(0);
+var n_bits: usize = 0;
+
+fn prepareEval() !void {
+    values = try gpa.alloc(u64, wire_names.items.len);
+    var it = xy_values.iterator();
+    while (it.next()) |e| {
+        try init_ids.append(gpa, wire_id.get(e.key_ptr.*).?);
+        try init_vals.append(gpa, e.value_ptr.*);
+    }
+    var bit: usize = 0;
+    while (bit < 46) : (bit += 1) {
+        var buf: [8]u8 = undefined;
+        const xn = std.fmt.bufPrint(&buf, "x{d:0>2}", .{bit}) catch break;
+        var buf2: [8]u8 = undefined;
+        const yn = std.fmt.bufPrint(&buf2, "y{d:0>2}", .{bit}) catch break;
+        var buf3: [8]u8 = undefined;
+        const zn = std.fmt.bufPrint(&buf3, "z{d:0>2}", .{bit}) catch break;
+        x_ids[bit] = wire_id.get(xn) orelse std.math.maxInt(u32);
+        y_ids[bit] = wire_id.get(yn) orelse std.math.maxInt(u32);
+        z_ids[bit] = wire_id.get(zn) orelse std.math.maxInt(u32);
+        n_bits = bit + 1;
+    }
+}
+
+var eval_unstable = false;
+
+fn evalAll(xv: ?u64, yv: ?u64) void {
+    @memset(values, 0);
+    for (init_ids.items, init_vals.items) |id, v| {
+        values[id] = v;
+    }
+    if (xv != null) {
+        var bit: usize = 0;
+        while (bit < n_bits) : (bit += 1) {
+            if (x_ids[bit] != std.math.maxInt(u32)) values[x_ids[bit]] = (xv.? >> @intCast(bit)) & 1;
+            if (y_ids[bit] != std.math.maxInt(u32)) values[y_ids[bit]] = (yv.? >> @intCast(bit)) & 1;
+        }
+    }
+    // bounded fixpoint: a swap can create a combinational cycle
+    eval_unstable = false;
+    var pass: usize = 0;
+    var changed = true;
+    while (changed) {
+        changed = false;
+        pass += 1;
+        if (pass > gates.items.len + 2) {
+            eval_unstable = true; // cyclic — score as invalid
+            return;
+        }
+        for (gates.items) |g| {
+            const a = values[g.in1];
+            const b = values[g.in2];
             const v: u64 = switch (g.op) {
                 'A' => a & b,
                 'O' => a | b,
-                else => a ^ b, // X
+                else => a ^ b,
             };
-            try vals.put(g.out, v);
+            if (values[g.out] != v) {
+                values[g.out] = v;
+                changed = true;
+            }
         }
-        if (next.items.len == pending.items.len) return error.Stuck;
-        pending.clearRetainingCapacity();
-        try pending.appendSlice(gpa, next.items);
     }
 }
 
-fn zValue(vals: *StrMap(u64)) u64 {
+fn zValue() u64 {
     var total: u64 = 0;
-    var bit: u6 = 0;
-    while (bit < 46) : (bit += 1) {
-        var name_buf: [8]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "z{d:0>2}", .{bit}) catch break;
-        const v = vals.get(name) orelse 0;
-        if (v == 1) total |= @as(u64, 1) << bit;
-    }
-    return total;
-}
-
-fn xValue(vals: *StrMap(u64), which: u8) u64 {
-    var total: u64 = 0;
-    var bit: u6 = 0;
-    while (bit < 46) : (bit += 1) {
-        var name_buf: [8]u8 = undefined;
-        const name = std.fmt.bufPrint(&name_buf, "{c}{d:0>2}", .{ which, bit }) catch break;
-        const v = vals.get(name) orelse 0;
-        if (v == 1) total |= @as(u64, 1) << bit;
+    var bit: usize = 0;
+    while (bit < n_bits) : (bit += 1) {
+        if (z_ids[bit] != std.math.maxInt(u32) and values[z_ids[bit]] == 1) {
+            total |= @as(u64, 1) << @intCast(bit);
+        }
     }
     return total;
 }
@@ -86,28 +125,14 @@ fn initTests() void {
     }
 }
 
-var eval_buf: StrMap(u64) = undefined;
-
-/// lowest incorrect z bit over all test vectors (99 = all correct); also
-/// returns total wrong bits via pointer
 fn circuitScore() struct { lowest: u8, wrong: usize } {
     var lowest: u8 = 99;
     var wrong_total: usize = 0;
     for (0..n_vecs) |t| {
-        var vals = inputs.clone() catch return .{ .lowest = 99, .wrong = 999 };
-        defer vals.deinit();
-        var bit: u6 = 0;
-        while (bit < 46) : (bit += 1) {
-            var buf: [8]u8 = undefined;
-            const xn = std.fmt.bufPrint(&buf, "x{d:0>2}", .{bit}) catch break;
-            vals.put(xn, (test_x[t] >> bit) & 1) catch {};
-            var buf2: [8]u8 = undefined;
-            const yn = std.fmt.bufPrint(&buf2, "y{d:0>2}", .{bit}) catch break;
-            vals.put(yn, (test_y[t] >> bit) & 1) catch {};
-        }
-        evalAll(&vals) catch return .{ .lowest = 99, .wrong = 999 };
+        evalAll(test_x[t], test_y[t]);
+        if (eval_unstable) return .{ .lowest = 99, .wrong = 999 };
         const expected = test_x[t] + test_y[t];
-        const z = zValue(&vals);
+        const z = zValue();
         const diff = z ^ expected;
         if (diff != 0) {
             wrong_total += @popCount(diff);
@@ -128,24 +153,27 @@ pub fn main() !void {
         }
         if (!in_gates) {
             const colon = indexOf(u8, line, ':').?;
-            try inputs.put(line[0..colon], try parseInt(u64, line[colon + 2 ..], 10));
+            const w = try wireOf(line[0..colon]);
+            _ = w;
+            try xy_values.put(line[0..colon], try parseInt(u64, line[colon + 2 ..], 10));
         } else {
             var it = tokenizeSca(u8, line, ' ');
-            const in1 = try std.heap.page_allocator.dupe(u8, it.next().?);
+            const in1 = try wireOf(try std.heap.page_allocator.dupe(u8, it.next().?));
             const op_raw = it.next().?;
-            const in2 = try std.heap.page_allocator.dupe(u8, it.next().?);
+            const in2 = try wireOf(try std.heap.page_allocator.dupe(u8, it.next().?));
             _ = it.next().?; // ->
-            const out = try std.heap.page_allocator.dupe(u8, it.next().?);
+            const out = try wireOf(try std.heap.page_allocator.dupe(u8, it.next().?));
             try gates.append(gpa, .{ .in1 = in1, .in2 = in2, .op = op_raw[0], .out = out });
         }
     }
 
+    try prepareEval();
+    defer gpa.free(values);
+
     // part 1
     {
-        var vals = try inputs.clone();
-        defer vals.deinit();
-        try evalAll(&vals);
-        print("part 1: {d}\n", .{zValue(&vals)});
+        evalAll(null, null);
+        print("part 1: {d}\n", .{zValue()});
     }
 
     // part 2: greedy swap repair — maximize the lowest incorrect z bit
@@ -165,19 +193,18 @@ pub fn main() !void {
                 var target: []const u8 = "";
                 var buf: [8]u8 = undefined;
                 target = std.fmt.bufPrint(&buf, "z{d:0>2}", .{cur.lowest}) catch "";
-                // find gates in the fan-in cone of `target` (up to full depth)
                 var queue: List([]const u8) = .empty;
                 defer queue.deinit(gpa);
                 try queue.append(gpa, target);
                 var depth: usize = 0;
                 while (queue.items.len > 0 and depth < 200) : (depth += 1) {
-                    const w = queue.pop().?;
+                    const wname = queue.pop().?;
                     for (gates.items, 0..) |g, gi| {
-                        if (std.mem.eql(u8, g.out, w)) {
+                        if (std.mem.eql(u8, wire_names.items[g.out], wname)) {
                             if (!cone.contains(gi)) {
                                 try cone.put(gi, {});
-                                try queue.append(gpa, g.in1);
-                                try queue.append(gpa, g.in2);
+                                try queue.append(gpa, wire_names.items[g.in1]);
+                                try queue.append(gpa, wire_names.items[g.in2]);
                             }
                         }
                     }
@@ -189,11 +216,8 @@ pub fn main() !void {
             var found = false;
             for (gates.items, 0..) |*gi, i| {
                 for (gates.items[i + 1 ..], i + 1..) |*gj, j| {
-                    // at least one gate in the cone
                     if (!cone.contains(i) and !cone.contains(j)) continue;
-                    const tmp = gi.out;
-                    gi.out = gj.out;
-                    gj.out = tmp;
+                    std.mem.swap(u32, &gi.out, &gj.out);
                     const s = circuitScore();
                     if (s.wrong < 900) {
                         if (!found or s.lowest > best_score.lowest or
@@ -205,20 +229,16 @@ pub fn main() !void {
                             found = true;
                         }
                     }
-                    const tmp2 = gi.out;
-                    gi.out = gj.out;
-                    gj.out = tmp2;
+                    std.mem.swap(u32, &gi.out, &gj.out);
                 }
             }
             if (!found) {
                 print("part 2: stuck at round {d}\n", .{round});
                 break;
             }
-            const tmp = gates.items[best_i].out;
-            gates.items[best_i].out = gates.items[best_j].out;
-            gates.items[best_j].out = tmp;
-            try swapped.append(gpa, gates.items[best_i].out);
-            try swapped.append(gpa, gates.items[best_j].out);
+            std.mem.swap(u32, &gates.items[best_i].out, &gates.items[best_j].out);
+            try swapped.append(gpa, wire_names.items[gates.items[best_i].out]);
+            try swapped.append(gpa, wire_names.items[gates.items[best_j].out]);
         }
 
         const fin = circuitScore();

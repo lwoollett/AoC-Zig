@@ -14,11 +14,16 @@ const intcode = @import("intcode");
 const data = @embedFile("data/day19.txt");
 
 var beam_cache = Map([2]i64, bool).init(std.heap.page_allocator);
+var probe_vm: ?intcode.VM = null;
 
 fn beam(x: i64, y: i64) !bool {
     const key = [2]i64{ x, y };
     if (beam_cache.get(key)) |v| return v;
-    var vm = try intcode.VM.initSource(gpa, data);
+    // reuse a parsed program instead of re-tokenizing the source each probe
+    if (probe_vm == null) {
+        probe_vm = try intcode.VM.initSource(gpa, data);
+    }
+    var vm = try probe_vm.?.initClone(gpa);
     defer vm.deinit();
     try vm.addInput(x);
     try vm.addInput(y);

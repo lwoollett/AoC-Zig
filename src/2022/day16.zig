@@ -22,9 +22,28 @@ var valves: List(Valve) = .empty;
 var index_of = StrMap(usize).init(std.heap.page_allocator);
 var dist: [64][64]i32 = undefined; // BFS distances between useful valves
 
+/// Upper bound on additional release: every still-closed valve opened
+/// instantly for the remaining time (precomputed suffix max flows).
+fn boundRemaining(opened_mask: u32, time_left: i32) u32 {
+    var bound: u32 = 0;
+    var v: usize = 0;
+    while (v < useful_count) : (v += 1) {
+        if (opened_mask & (@as(u32, 1) << @intCast(v)) == 0) {
+            const f = valveFlow(v);
+            // sum over all open valves is a valid (loose) bound
+            bound += f * @as(u32, @intCast(@max(time_left, 0)));
+        }
+    }
+    return bound;
+}
+
 /// DFS over opened-valve subsets; returns the best release.
 fn search(from: usize, time_left: i32, opened: *Map(u32, void), flow_so_far: u32, best: *u32) !void {
     if (flow_so_far > best.*) best.* = flow_so_far;
+    var opened_mask: u32 = 0;
+    var kit = opened.keyIterator();
+    while (kit.next()) |k| opened_mask |= k.*;
+    if (flow_so_far + boundRemaining(opened_mask, time_left) <= best.*) return;
     const useful = useful_count;
     for (0..useful) |v| {
         const bit = @as(u32, 1) << @intCast(v);
@@ -157,6 +176,13 @@ fn searchMasks(from: usize, time_left: i32, opened: *Map(u32, void), flow_so_far
     if (!gop.found_existing or flow_so_far > gop.value_ptr.*) {
         gop.value_ptr.* = flow_so_far;
     }
+    // prune: cannot beat the best split already found for the complement
+    const total_mask = (@as(u32, 1) << @intCast(useful_count)) - 1;
+    if (best_for.get(mask ^ total_mask)) |c| {
+        _ = c; // complement flow is a lower bound for the other actor; not a
+        // prune condition by itself — skip pruning here, mask dedup above is
+        // the main win
+    }
     for (0..useful_count) |v| {
         const bit = @as(u32, 1) << @intCast(v);
         if (mask & bit != 0) continue;
@@ -196,4 +222,4 @@ const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
-// Only unmodified days will be modified.
+// Only unmodified days will be updated.
