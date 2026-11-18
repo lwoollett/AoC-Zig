@@ -22,36 +22,25 @@ fn spiralPos(n: u64) [2]i64 {
     if (n == 1) return .{ 0, 0 };
     var ring: u64 = 1;
     while (n > (2 * ring + 1) * (2 * ring + 1)) ring += 1;
-    const side: i64 = @intCast(2 * ring);
+    const r: i64 = @intCast(ring);
     const max: i64 = @intCast((2 * ring + 1) * (2 * ring + 1));
-    const min: i64 = @intCast((2 * ring - 1) * (2 * ring - 1) + 1);
-    _ = min;
-    // walk backwards from the ring's end (bottom-right corner)
-    var pos = [2]i64{ @intCast(ring), -@as(i64, @intCast(ring)) };
-    var steps = max - @as(i64, @intCast(n));
-    // right side going up
+    var steps = max - @as(i64, @intCast(n)); // 0..8r-1
+    const side: i64 = 2 * r;
+    // walk backwards (counterclockwise) from the ring end (r, -r):
+    // bottom (leftward), left (upward), top (rightward), right (downward)
     if (steps <= side - 1) {
-        pos[1] += steps;
-        return pos;
+        return .{ r - steps, -r };
     }
-    pos[1] += side - 1;
-    steps -= side - 1;
-    // top side going left
-    if (steps <= side) {
-        pos[0] -= steps;
-        return pos;
-    }
-    pos[0] -= side;
     steps -= side;
-    // left side going down
-    if (steps <= side) {
-        pos[1] -= steps;
-        return pos;
+    if (steps <= side - 1) {
+        return .{ -r, -r + steps };
     }
-    pos[1] -= side;
     steps -= side;
-    pos[0] += steps;
-    return pos;
+    if (steps <= side - 1) {
+        return .{ -r + steps, r };
+    }
+    steps -= side;
+    return .{ r, r - steps };
 }
 
 pub fn main() !void {
