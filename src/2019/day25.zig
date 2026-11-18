@@ -338,7 +338,6 @@ fn runOnce() !bool {
         }
     }
 
-
     // drop everything
     for (inventory.items) |item| {
         _ = try command(try std.fmt.allocPrint(gpa, "drop {s}", .{item}));

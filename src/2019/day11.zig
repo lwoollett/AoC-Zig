@@ -72,7 +72,7 @@ pub fn main() !void {
             min_y = @min(min_y, k[1]);
             max_y = @max(max_y, k[1]);
         }
-        print("part 2 ({d}x{d}):\n", .{max_x - min_x + 1, max_y - min_y + 1});
+        print("part 2 ({d}x{d}):\n", .{ max_x - min_x + 1, max_y - min_y + 1 });
         var y = min_y;
         while (y <= max_y) : (y += 1) {
             var x = min_x;
