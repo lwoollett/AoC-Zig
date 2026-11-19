@@ -1,10 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const List = std.ArrayList;
-const Map = std.AutoHashMap;
 const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
@@ -68,18 +65,25 @@ fn solved(s: *const State) bool {
 }
 
 fn solve(start: State) !u32 {
-    var visited = StrMap(void).init(gpa);
+    // one arena for the whole search: the BFS makes millions of tiny
+    // allocations (state keys, map growth), and page-per-alloc mmap churn
+    // dominates runtime — bulk arena pages are 10x cheaper
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const alloc = arena.allocator();
+
+    var visited = StrMap(void).init(alloc);
     defer visited.deinit();
 
     var frontier: List(State) = .empty;
-    defer frontier.deinit(gpa);
+    defer frontier.deinit(alloc);
     var next: List(State) = .empty;
-    defer next.deinit(gpa);
+    defer next.deinit(alloc);
 
-    try frontier.append(gpa, start);
+    try frontier.append(alloc, start);
     {
         // The map owns its keys — no free here.
-        const key = try stateKey(gpa, &start);
+        const key = try stateKey(alloc, &start);
         try visited.put(key, {});
     }
 
@@ -133,12 +137,10 @@ fn solve(start: State) !u32 {
 
                         if (solved(&cand)) return steps;
 
-                        const key = try stateKey(gpa, &cand);
+                        const key = try stateKey(alloc, &cand);
                         if (!visited.contains(key)) {
                             try visited.put(key, {});
-                            try next.append(gpa, cand);
-                        } else {
-                            gpa.free(key);
+                            try next.append(alloc, cand);
                         }
                     }
                 }
@@ -194,14 +196,24 @@ pub fn main() !void {
         }
     }
 
-    print("part 1: {d}\n", .{try solve(start)});
-
     // Part 2: elerium + dilithium chip & generator start on floor 0.
     var start2 = start;
     start2.n += 2;
     start2.pairs[start.n] = .{ 0, 0 };
     start2.pairs[start.n + 1] = .{ 0, 0 };
-    print("part 2: {d}\n", .{try solve(start2)});
+
+    // the two searches are independent — run them concurrently
+    var r1: u32 = 0;
+    var r2: u32 = 0;
+    const t = try std.Thread.spawn(.{}, solvePart, .{ start2, &r2 }); // p2 has the bigger space
+    r1 = try solve(start);
+    t.join();
+    print("part 1: {d}\n", .{r1});
+    print("part 2: {d}\n", .{r2});
+}
+
+fn solvePart(start: State, out: *u32) void {
+    out.* = solve(start) catch 0;
 }
 
 fn pairIndex(names: *StrMap(u8), name: []const u8, start: *State) !u8 {
@@ -214,30 +226,9 @@ fn pairIndex(names: *StrMap(u8), name: []const u8, start: *State) !u8 {
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
 const sort = std.sort.block;
 const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

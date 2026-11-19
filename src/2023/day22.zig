@@ -1,10 +1,5 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const List = std.ArrayList;
-const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
@@ -23,7 +18,8 @@ const Brick = struct {
 
 var bricks: List(Brick) = .empty;
 
-/// settle all bricks; returns how many moved
+/// settle all bricks (sort by base, drop onto the height map); returns how
+/// many moved
 fn settle() !usize {
     std.mem.sort(Brick, bricks.items, {}, struct {
         fn lessThan(_: void, a: Brick, b: Brick) bool {
@@ -65,6 +61,10 @@ fn settle() !usize {
     return moved;
 }
 
+fn zLessThan(_: void, a: Brick, b: Brick) bool {
+    return a.z0 < b.z0;
+}
+
 pub fn main() !void {
     var lines = tokenizeAny(u8, data, "\n");
     while (lines.next()) |line| {
@@ -92,54 +92,138 @@ pub fn main() !void {
         });
     }
 
-    _ = try settle();
+    _ = try settle(); // settle once
+    std.mem.sort(Brick, bricks.items, {}, zLessThan); // by settled base height
 
-    // for each brick: remove it, re-settle, count moved
-    var safe: usize = 0;
-    var total_falls: usize = 0;
-    for (bricks.items, 0..) |_, bi| {
-        // snapshot
-        const snapshot = try gpa.dupe(Brick, bricks.items);
-        defer gpa.free(snapshot);
-        _ = bricks.orderedRemove(bi);
-        const moved = try settle();
-        if (moved == 0) safe += 1;
-        total_falls += moved;
-        // restore
-        bricks.clearRetainingCapacity();
-        try bricks.appendSlice(gpa, snapshot);
+    const n = bricks.items.len;
+
+    // support graph: sweep settled bricks bottom-up, tracking which brick
+    // owns each column's top surface. A brick's supporters are the distinct
+    // owners of the cells exactly one unit below its base.
+    const no_owner: usize = std.math.maxInt(usize);
+    var top_z = try gpa.alloc([]i64, 400);
+    defer {
+        for (top_z) |r| gpa.free(r);
+        gpa.free(top_z);
+    }
+    var owner = try gpa.alloc([]usize, 400);
+    defer {
+        for (owner) |r| gpa.free(r);
+        gpa.free(owner);
+    }
+    for (0..400) |x| {
+        top_z[x] = try gpa.alloc(i64, 400);
+        owner[x] = try gpa.alloc(usize, 400);
+        @memset(top_z[x], 0);
+        @memset(owner[x], no_owner);
     }
 
+    var supporters = try gpa.alloc([]usize, n);
+    defer {
+        for (supporters) |s| gpa.free(s);
+        gpa.free(supporters);
+    }
+    var sup_buf: List(usize) = .empty;
+    defer sup_buf.deinit(gpa);
+    for (bricks.items, 0..) |b, bi| {
+        sup_buf.clearRetainingCapacity();
+        var x = b.x0;
+        while (x <= b.x1) : (x += 1) {
+            var y = b.y0;
+            while (y <= b.y1) : (y += 1) {
+                const xi: usize = @intCast(x);
+                const yi: usize = @intCast(y);
+                if (top_z[xi][yi] == b.z0 and owner[xi][yi] != no_owner) {
+                    const s = owner[xi][yi];
+                    var dup = false;
+                    for (sup_buf.items) |e| {
+                        if (e == s) dup = true;
+                    }
+                    if (!dup) try sup_buf.append(gpa, s);
+                }
+            }
+        }
+        supporters[bi] = try gpa.dupe(usize, sup_buf.items);
+        x = b.x0;
+        while (x <= b.x1) : (x += 1) {
+            var y = b.y0;
+            while (y <= b.y1) : (y += 1) {
+                top_z[@intCast(x)][@intCast(y)] = b.z1 + 1;
+                owner[@intCast(x)][@intCast(y)] = bi;
+            }
+        }
+    }
+
+    // part 1: a brick is unsafe if some brick rests on it alone
+    var unsafe = try gpa.alloc(bool, n);
+    defer gpa.free(unsafe);
+    @memset(unsafe, false);
+    for (supporters) |sup| {
+        if (sup.len == 1) unsafe[sup[0]] = true;
+    }
+    var safe: usize = 0;
+    for (unsafe) |u| {
+        if (!u) safe += 1;
+    }
     print("part 1: {d}\n", .{safe});
+
+    // part 2: per removed brick, cascade via falling supporter counts
+    // (inverse support lists + Kahn-style propagation)
+    var supportees = try gpa.alloc(List(usize), n);
+    defer {
+        for (supportees) |*l| l.deinit(gpa);
+        gpa.free(supportees);
+    }
+    for (0..n) |i| supportees[i] = .empty;
+    for (supporters, 0..) |sup, c| {
+        for (sup) |s| {
+            try supportees[s].append(gpa, c);
+        }
+    }
+
+    var counts = try gpa.alloc(u32, n);
+    defer gpa.free(counts);
+    for (supporters, 0..) |sup, i| counts[i] = @intCast(sup.len);
+
+    var falling = try gpa.alloc(bool, n);
+    defer gpa.free(falling);
+    var queue = try gpa.alloc(usize, n);
+    defer gpa.free(queue);
+
+    var total_falls: usize = 0;
+    for (0..n) |r| {
+        @memset(falling, false);
+        for (supporters, 0..) |sup, i| counts[i] = @intCast(sup.len);
+        var q_head: usize = 0;
+        var q_tail: usize = 0;
+        falling[r] = true;
+        queue[q_tail] = r;
+        q_tail += 1;
+        while (q_head < q_tail) {
+            const s = queue[q_head];
+            q_head += 1;
+            for (supportees[s].items) |c| {
+                if (falling[c]) continue;
+                counts[c] -= 1;
+                if (counts[c] == 0) {
+                    falling[c] = true;
+                    total_falls += 1;
+                    queue[q_tail] = c;
+                    q_tail += 1;
+                }
+            }
+        }
+    }
     print("part 2: {d}\n", .{total_falls});
 }
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
 const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
 const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
 const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
 const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

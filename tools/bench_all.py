@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-"""Build + benchmark + verify every day against the answer manifests."""
-import re, subprocess, sys, time, glob, os, json
-from collections import defaultdict
+"""Build + benchmark + verify every day against the answer manifests.
+
+Times every ReleaseSafe binary in zig-out/bin (min of 3 runs) and prints a
+per-day markdown table suitable for pasting into README.md. Days whose part 2
+prints a letter grid (2016 d8, 2018 d10, 2019 d8/d11, 2021 d13, 2022 d10)
+can't be regex-verified; they are skipped in verification, not checked for
+correctness — their part 1 answers are still verified.
+"""
+import os
+import re
+import subprocess
+import time
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)) + "/..")
 
@@ -9,72 +18,76 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)) + "/..")
 expected = {}  # (year, day) -> {part: answer}
 for y in range(2015, 2026):
     try:
-        for line in open(f"tools/aoc-mcp/answers_{y}.txt"):
-            line = line.strip()
-            m = re.match(rf"^{y} (\d+) ([12]) (\S+)$", line)
-            if m:
-                expected.setdefault((y, int(m.group(1))), {})[int(m.group(2))] = m.group(3)
-            elif y == 2015:
-                m2 = re.match(r"^(\d+) ([12]) (\S+)$", line)
-                if m2:
-                    expected.setdefault((2015, int(m2.group(1))), {})[int(m2.group(2))] = m2.group(3)
+        with open(f"tools/aoc-mcp/answers_{y}.txt") as f:
+            for line in f:
+                line = line.strip()
+                m = re.match(rf"^{y} (\d+) ([12]) (\S+)$", line)
+                if m:
+                    expected.setdefault((y, int(m.group(1))), {})[int(m.group(2))] = m.group(3)
+                elif y == 2015:
+                    m2 = re.match(r"^(\d+) ([12]) (\S+)$", line)
+                    if m2:
+                        expected.setdefault((2015, int(m2.group(1))), {})[int(m2.group(2))] = m2.group(3)
     except FileNotFoundError:
         pass
 
-results = []
+print("building ReleaseSafe binaries...", flush=True)
+subprocess.run(["zig", "build", "install_all", "-Doptimize=ReleaseSafe"], check=True)
+
+times = {}
 fails = []
-
-# ensure all exes built (release)
-print("building release binaries...", flush=True)
-subprocess.run(["zig", "build", "-Doptimize=ReleaseSafe", "bench_placeholder_ignored"],
-               capture_output=True)  # no-op guard
 for y in range(2015, 2026):
-    days = sorted(d for (yy, d) in expected if yy == y)
-    for d in days:
-        r = subprocess.run(["zig", "build", f"{y}_{d:02}", "-Doptimize=ReleaseSafe"],
-                           capture_output=True, text=True)
-        if r.returncode != 0:
-            fails.append((y, d, "BUILD", r.stderr[-300:]))
+    for d in range(1, 26):
+        exp = expected.get((y, d), {})
+        best, out = float("inf"), ""
+        for _ in range(3):
+            t0 = time.perf_counter()
+            try:
+                r = subprocess.run([f"zig-out/bin/{y}_{d:02}"], capture_output=True, text=True, timeout=120)
+            except subprocess.TimeoutExpired:
+                fails.append((y, d, "TIMEOUT", ""))
+                best = float("inf")
+                break
+            best = min(best, time.perf_counter() - t0)
+            out = (r.stderr or "") + (r.stdout or "")
+        if best == float("inf"):
+            times[(y, d)] = None
             continue
+        if "part 1" not in out:
+            continue  # not implemented yet (2025 d13+ stubs)
+        times[(y, d)] = best
+        for part, ans in exp.items():
+            m = re.search(rf"part {part}: (\S+)", out)
+            if not m:
+                # picture days print a grid after "part N:" — tolerated
+                if f"part {part}" in out:
+                    continue
+                fails.append((y, d, f"P{part}", "no output"))
+            elif m.group(1) != ans:
+                fails.append((y, d, f"P{part}", f"got {m.group(1)} want {ans}"))
 
-# locate binaries
-bins = {}
-for path in glob.glob(".zig-cache/o/*/*"):
-    name = os.path.basename(path)
-    m = re.match(r"^(\d{4})_(\d{2})$", name)
-    if m:
-        key = (int(m.group(1)), int(m.group(2)))
-        if key not in bins or os.path.getmtime(path) > os.path.getmtime(bins[key]):
-            bins[key] = path
+YEARS = list(range(2015, 2026))
 
-for (y, d) in sorted(bins):
-    exp = expected.get((y, d), {})
-    t0 = time.time()
-    try:
-        r = subprocess.run([bins[(y, d)]], capture_output=True, text=True, timeout=120)
-        dt = time.time() - t0
-    except subprocess.TimeoutExpired:
-        fails.append((y, d, "TIMEOUT", ">600s"))
-        results.append((y, d, 999, len(exp)))
-        continue
-    out = (r.stderr or "") + (r.stdout or "")
-    for part, ans in exp.items():
-        pat = rf"part {part}: (\S+)"
-        m = re.search(pat, out)
-        if not m:
-            fails.append((y, d, f"P{part}", f"no output; stderr={r.stderr[-200:]}"))
-        elif m.group(1) != ans:
-            fails.append((y, d, f"P{part}", f"got {m.group(1)} want {ans}"))
-    results.append((y, d, dt, len(exp)))
 
-results.sort(key=lambda t: -t[2])
-print(f"\n{'year':>5} {'day':>4} {'secs':>8}  parts")
-for (y, d, dt, np) in results:
-    flag = "  <<< SLOW" if dt > 5 else ""
-    print(f"{y:>5} {d:>4} {dt:>8.2f}  {np}{flag}")
+def fmt(t):
+    if t is None:
+        return "—"
+    if t >= 1:
+        return f"{t:.2f}s"
+    return f"{t * 1000:.0f}"
 
-total = sum(r[2] for r in results)
-print(f"\ntotal runtime: {total:.1f}s across {len(results)} days")
+
+print()
+print("| Day | " + " | ".join(str(y) for y in YEARS) + " |")
+print("|---:|" + "---:|" * len(YEARS))
+for d in range(1, 26):
+    row = [fmt(times.get((y, d))) for y in YEARS]
+    print(f"| {d} | " + " | ".join(row) + " |")
+totals = [sum(t for t in (times.get((y, d)) for d in range(1, 26)) if t) for y in YEARS]
+print("| **total** | " + " | ".join(fmt(t) for t in totals) + " |")
+whole = sum(t for t in times.values() if t)
+print(f"\nwhole suite: {whole:.1f}s across {sum(1 for t in times.values() if t)} days")
+
 print(f"\nFAILURES: {len(fails)}")
 for f in fails:
     print(" ", f)

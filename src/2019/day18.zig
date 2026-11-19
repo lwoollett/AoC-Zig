@@ -1,10 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const List = std.ArrayList;
 const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
@@ -121,10 +117,10 @@ fn solve(grid: [gh][gw]u8, starts: []const P, n_keys: u8) !u64 {
     while (pq.pop()) |item| {
         const s = item.state;
         if (s.mask == all_keys) return item.cost;
-        var h = std.hash.Wyhash.init(0);
-        h.update(&s.robots);
-        h.update(std.mem.asBytes(&s.mask));
-        const key = h.final();
+        // robots+mask pack exactly into u64: direct map key, no hashing
+        const key: u64 = @as(u64, s.mask) << 32 |
+            @as(u64, s.robots[0]) | @as(u64, s.robots[1]) << 8 |
+            @as(u64, s.robots[2]) << 16 | @as(u64, s.robots[3]) << 24;
         if (visited.contains(key)) continue;
         try visited.put(key, {});
 
@@ -164,64 +160,43 @@ pub fn main() !void {
         }
     }
 
-    // part 1: single robot
-    {
-        var starts = [_]P{start};
-        const steps = try solve(grid, starts[0..1], n_keys);
-        print("part 1: {d}\n", .{steps});
-    }
+    // part 2: split into four quadrants; both searches are independent
+    // (solve takes the grid by value and owns its state) — run concurrently
+    var g2 = grid;
+    const sx = start.x;
+    const sy = start.y;
+    g2[sy - 1][sx - 1] = '@';
+    g2[sy - 1][sx] = '#';
+    g2[sy - 1][sx + 1] = '@';
+    g2[sy][sx - 1] = '#';
+    g2[sy][sx] = '#';
+    g2[sy][sx + 1] = '#';
+    g2[sy + 1][sx - 1] = '@';
+    g2[sy + 1][sx] = '#';
+    g2[sy + 1][sx + 1] = '@';
+    var starts1 = [_]P{start};
+    var starts2 = [_]P{
+        .{ .x = sx - 1, .y = sy - 1 },
+        .{ .x = sx + 1, .y = sy - 1 },
+        .{ .x = sx - 1, .y = sy + 1 },
+        .{ .x = sx + 1, .y = sy + 1 },
+    };
+    var steps1: u64 = 0;
+    var steps2: u64 = 0;
+    const t = try std.Thread.spawn(.{}, solvePart, .{ g2, starts2[0..4], n_keys, &steps2 });
+    steps1 = try solve(grid, starts1[0..1], n_keys);
+    t.join();
+    print("part 1: {d}\n", .{steps1});
+    print("part 2: {d}\n", .{steps2});
+}
 
-    // part 2: split into four quadrants
-    {
-        var g2 = grid;
-        const x = start.x;
-        const y = start.y;
-        g2[y - 1][x - 1] = '@';
-        g2[y - 1][x] = '#';
-        g2[y - 1][x + 1] = '@';
-        g2[y][x - 1] = '#';
-        g2[y][x] = '#';
-        g2[y][x + 1] = '#';
-        g2[y + 1][x - 1] = '@';
-        g2[y + 1][x] = '#';
-        g2[y + 1][x + 1] = '@';
-        var starts = [_]P{
-            .{ .x = x - 1, .y = y - 1 },
-            .{ .x = x + 1, .y = y - 1 },
-            .{ .x = x - 1, .y = y + 1 },
-            .{ .x = x + 1, .y = y + 1 },
-        };
-        const steps = try solve(g2, starts[0..4], n_keys);
-        print("part 2: {d}\n", .{steps});
-    }
+fn solvePart(g: [gh][gw]u8, starts: []const P, n: u8, out: *u64) void {
+    out.* = solve(g, starts, n) catch 0;
 }
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

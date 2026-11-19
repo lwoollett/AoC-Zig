@@ -1,42 +1,11 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const List = std.ArrayList;
 const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
 // const zom = @import("zom");
 
 const data = @embedFile("data/day21.txt");
-
-const Regs = [6]u64;
-
-fn apply(op: u8, r: Regs, a: u64, b: u64, c: u64) Regs {
-    var n = r;
-    switch (op) {
-        0 => n[c] = n[a] + n[b],
-        1 => n[c] = n[a] + b,
-        2 => n[c] = n[a] * n[b],
-        3 => n[c] = n[a] * b,
-        4 => n[c] = n[a] & n[b],
-        5 => n[c] = n[a] & b,
-        6 => n[c] = n[a] | n[b],
-        7 => n[c] = n[a] | b,
-        8 => n[c] = n[a],
-        9 => n[c] = a,
-        10 => n[c] = if (a > n[b]) 1 else 0,
-        11 => n[c] = if (n[a] > b) 1 else 0,
-        12 => n[c] = if (n[a] > n[b]) 1 else 0,
-        13 => n[c] = if (a == n[b]) 1 else 0,
-        14 => n[c] = if (n[a] == b) 1 else 0,
-        15 => n[c] = if (n[a] == n[b]) 1 else 0,
-        else => unreachable,
-    }
-    return n;
-}
 
 pub fn main() !void {
     var ip_reg: u3 = 0;
@@ -92,52 +61,28 @@ pub fn main() !void {
         }
     }.f;
 
-    // The program halts when r0 equals the compared value; the fewest-steps
-    // halt uses the LAST value of the sequence before it first repeats.
+    // The program halts when r0 equals the value at the compare instruction.
+    // Fewest instructions: the FIRST compared value (any r0 matching it
+    // halts at the very first check). Most instructions: the LAST distinct
+    // value before the generator's sequence first repeats.
     var seen = Map(u64, void).init(gpa);
     defer seen.deinit();
-    var v: u64 = 872; // value at the first compare with r0 = 0 (from the prologue)
-    // NOTE: compute the true first compared value by running the prologue's
-    // arithmetic: 123 & 456 == 72 gates a jump; with r0=0 the prologue falls
-    // through to the generator seeded from r3=0.
-    v = F(0, seed, mult);
-    var prev: u64 = v;
+    const first_cmp = F(0, seed, mult); // value at the first compare (r0 = 0 prologue)
+    var v: u64 = first_cmp;
+    var prev: u64 = first_cmp;
     while (!seen.contains(v)) {
         try seen.put(v, {});
         prev = v;
         v = F(v, seed, mult);
     }
-    print("part 1: {d}\n", .{prev});
+    print("part 1: {d}\n", .{first_cmp});
+    print("part 2: {d}\n", .{prev});
 }
-
-var last_compared: u64 = 0;
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
 const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

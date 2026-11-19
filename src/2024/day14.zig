@@ -1,10 +1,5 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const List = std.ArrayList;
-const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
@@ -49,22 +44,23 @@ pub fn main() !void {
     {
         var best_t: u64 = 0;
         var best_score: i64 = std.math.minInt(i64);
+        const grid = try gpa.alloc(u8, w * h);
+        defer gpa.free(grid);
         var t: u64 = 0;
         while (t < 10000) : (t += 1) {
-            // count robots sharing a cell with another (clusters)
-            var seen = Map([2]i64, u32).init(gpa);
-            defer seen.deinit();
+            // count robots sharing a cell with another (clusters), tracked
+            // in a flat occupancy grid — no per-frame hashmap churn
+            @memset(grid, 0);
+            var clustered: i64 = 0;
             for (robots.items) |r| {
                 const x = @mod(r.px + r.vx * @as(i64, @intCast(t)), w);
                 const y = @mod(r.py + r.vy * @as(i64, @intCast(t)), h);
-                const gop = try seen.getOrPut(.{ x, y });
-                if (!gop.found_existing) gop.value_ptr.* = 0;
-                gop.value_ptr.* += 1;
-            }
-            var clustered: i64 = 0;
-            var sit = seen.valueIterator();
-            while (sit.next()) |c| {
-                if (c.* > 1) clustered += c.* - 1;
+                const i: usize = @intCast(y * w + x);
+                if (grid[i] != 0) {
+                    clustered += 1;
+                } else {
+                    grid[i] = 1;
+                }
             }
             if (clustered > best_score) {
                 best_score = clustered;
@@ -77,30 +73,8 @@ pub fn main() !void {
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
 const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

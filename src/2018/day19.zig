@@ -1,9 +1,4 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const List = std.ArrayList;
-const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
 
 const util = @import("util");
 const gpa = util.gpa;
@@ -95,7 +90,9 @@ fn run(p: *const Program, r0: u64, max_steps: u64, stable_reg: ?*u64) u64 {
             if (stable_reg) |out| {
                 var best: u64 = 0;
                 for (snap_values) |v| {
-                    if (v > 1000 and v > best) best = v;
+                    // part 1's constant is small (~3 digits), so keep the
+                    // floor low and take the LARGEST stable register
+                    if (v > 100 and v > best) best = v;
                 }
                 out.* = best;
             }
@@ -120,43 +117,27 @@ fn sumDivisors(n: u64) u64 {
 pub fn main() !void {
     const p = try parse();
 
-    // Part 1: direct simulation.
-    print("part 1: {d}\n", .{run(&p, 0, 10_000_000_000, null)});
+    // Both parts: the program builds a constant in a register and then sums
+    // its divisors — with r0=1 the constant is huge, with r0=0 small. Probe
+    // the constant with the snapshot machinery and shortcut; direct
+    // simulation of part 1 takes ~0.4s, part 2 would take days.
+    var target0: u64 = 0;
+    _ = run(&p, 0, 5_000_000, &target0);
+    if (target0 == 0) return error.NoTargetFound;
+    print("part 1: {d}\n", .{sumDivisors(target0)});
 
-    // Part 2: r0=1 makes the program compute the sum of divisors of a
-    // large constant it builds in a register; extract it and shortcut.
     var target: u64 = 0;
-    _ = run(&p, 1, 30_000_000, &target);
+    // ladder: the constant builds early; a short probe usually suffices
+    _ = run(&p, 1, 5_000_000, &target);
+    if (target == 0) _ = run(&p, 1, 30_000_000, &target);
     if (target == 0) return error.NoTargetFound;
     print("part 2: {d}\n", .{sumDivisors(target)});
 }
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
 const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

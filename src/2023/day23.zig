@@ -1,10 +1,6 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
 const List = std.ArrayList;
 const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
-
 const util = @import("util");
 const gpa = util.gpa;
 
@@ -17,9 +13,10 @@ var h: usize = 0;
 var w: usize = 0;
 
 const Node = [2]usize;
+const Edge = struct { to: usize, len: usize };
 
 var nodes: List(Node) = .empty;
-var edges: List(List(struct { to: usize, len: usize })) = .empty;
+var edges: List(List(Edge)) = .empty;
 
 fn isJunction(x: usize, y: usize, comptime slopes: bool) bool {
     if (grid[y][x] == '#') return false;
@@ -115,22 +112,6 @@ fn buildGraph(comptime slopes: bool) !void {
     }
 }
 
-var best_dist: usize = 0;
-var visited: List(bool) = .empty;
-
-fn dfs(node: usize, dist: usize) void {
-    if (node == 1) { // end node (second junction created — the bottom exit)
-        best_dist = @max(best_dist, dist);
-        return;
-    }
-    if (visited.items[node]) return;
-    visited.items[node] = true;
-    for (edges.items[node].items) |e| {
-        dfs(e.to, dist + e.len);
-    }
-    visited.items[node] = false;
-}
-
 pub fn main() !void {
     var lines = tokenizeAny(u8, data, "\n");
     while (lines.next()) |line| {
@@ -144,80 +125,118 @@ pub fn main() !void {
     // identify start/end node indices: start = top junction, end = bottom
     // start node has y == 0; end has y == h-1
 
-    // part 1
-    {
-        try buildGraph(true);
-        // find start (y==0) and end (y==h-1)
-        var start_i: usize = 0;
-        var end_i: usize = 0;
-        for (nodes.items, 0..) |n, i| {
-            if (n[1] == 0) start_i = i;
-            if (n[1] == h - 1) end_i = i;
-        }
-        best_dist = 0;
-        visited.clearRetainingCapacity();
-        for (0..nodes.items.len) |_| try visited.append(gpa, false);
-        // dfs with end check
-        dfsGeneric(start_i, end_i, 0);
-        print("part 1: {d}\n", .{best_dist});
-    }
+    // part 1: slope-aware graph, plain DFS (small search)
+    try buildGraph(true);
+    const se1 = findStartEnd();
+    const e1 = try snapshotEdges();
+    var c1 = DfsCtx{ .edges = e1, .end_i = se1[1] };
+    dfsMask(&c1, se1[0], 0, 0);
+    print("part 1: {d}\n", .{c1.best});
 
-    // part 2
-    {
-        try buildGraph(false);
-        var start_i: usize = 0;
-        var end_i: usize = 0;
-        for (nodes.items, 0..) |n, i| {
-            if (n[1] == 0) start_i = i;
-            if (n[1] == h - 1) end_i = i;
-        }
-        best_dist = 0;
-        visited.clearRetainingCapacity();
-        for (0..nodes.items.len) |_| try visited.append(gpa, false);
-        dfsGeneric(start_i, end_i, 0);
-        print("part 2: {d}\n", .{best_dist});
-    }
+    // part 2: no slopes — the search is all-path enumeration, so split it
+    // across threads at a small frontier of partial paths
+    try buildGraph(false);
+    const se2 = findStartEnd();
+    const e2 = try snapshotEdges();
+    const best2 = try parallelLongest(e2, se2[0], se2[1]);
+    print("part 2: {d}\n", .{best2});
 }
 
-fn dfsGeneric(node: usize, end_i: usize, dist: usize) void {
-    if (node == end_i) {
-        best_dist = @max(best_dist, dist);
+/// Enumerate partial paths from `start` until the frontier is wide enough,
+/// then DFS each frontier item on a thread pool. Independent searches share
+/// nothing, so it scales linearly (each thread prunes only against its own
+/// best).
+fn parallelLongest(graph: []const []const Edge, start: usize, end_i: usize) !usize {
+    const FrItem = struct { node: usize, dist: usize, mask: u64 };
+    var frontier: List(FrItem) = .empty;
+    defer frontier.deinit(gpa);
+    try frontier.append(gpa, .{ .node = start, .dist = 0, .mask = 0 });
+
+    const n_threads = try std.Thread.getCpuCount();
+    var depth: usize = 0;
+    while (depth < 10 and frontier.items.len < n_threads * 2) : (depth += 1) {
+        var next: List(FrItem) = .empty;
+        for (frontier.items) |it| {
+            const bit = @as(u64, 1) << @intCast(it.node);
+            for (graph[it.node]) |e| {
+                if (it.mask & bit != 0) continue; // node already on this path
+                if (it.mask & (@as(u64, 1) << @intCast(e.to)) != 0) continue;
+                try next.append(gpa, .{ .node = e.to, .dist = it.dist + e.len, .mask = it.mask | bit });
+            }
+        }
+        if (next.items.len == 0) break;
+        frontier.deinit(gpa);
+        frontier = next;
+    }
+
+    const W = struct {
+        edges: []const []const Edge,
+        end_i: usize,
+        items: []const FrItem,
+        next: std.atomic.Value(u64) = .init(0),
+        best: std.atomic.Value(usize) = .init(0),
+
+        fn worker(self: *@This()) void {
+            var local: usize = 0;
+            while (true) {
+                const i = self.next.fetchAdd(1, .acq_rel);
+                if (i >= self.items.len) break;
+                var c = DfsCtx{ .edges = self.edges, .end_i = self.end_i };
+                dfsMask(&c, self.items[i].node, self.items[i].dist, self.items[i].mask);
+                local = @max(local, c.best);
+            }
+            _ = self.best.fetchMax(local, .acq_rel);
+        }
+    };
+    var work = W{ .edges = graph, .end_i = end_i, .items = frontier.items };
+    var threads = try std.ArrayList(std.Thread).initCapacity(gpa, n_threads);
+    defer threads.deinit(gpa);
+    for (0..n_threads) |_| {
+        try threads.append(gpa, try std.Thread.spawn(.{}, W.worker, .{&work}));
+    }
+    for (threads.items) |t| t.join();
+    return work.best.load(.acquire);
+}
+
+fn findStartEnd() [2]usize {
+    var se: [2]usize = .{ 0, 0 };
+    for (nodes.items, 0..) |n, i| {
+        if (n[1] == 0) se[0] = i;
+        if (n[1] == h - 1) se[1] = i;
+    }
+    return se;
+}
+
+fn snapshotEdges() ![]const []const Edge {
+    const out = try gpa.alloc([]const Edge, edges.items.len);
+    for (edges.items, 0..) |l, i| {
+        out[i] = try gpa.dupe(Edge, l.items);
+    }
+    return out;
+}
+
+const DfsCtx = struct {
+    edges: []const []const Edge,
+    best: usize = 0,
+    end_i: usize,
+};
+
+/// Longest simple path via DFS; `mask` is the on-path set (nodes <= 64).
+fn dfsMask(c: *DfsCtx, node: usize, dist: usize, mask: u64) void {
+    if (node == c.end_i) {
+        c.best = @max(c.best, dist);
         return;
     }
-    if (visited.items[node]) return;
-    visited.items[node] = true;
-    for (edges.items[node].items) |e| {
-        dfsGeneric(e.to, end_i, dist + e.len);
+    const bit = @as(u64, 1) << @intCast(node);
+    if (mask & bit != 0) return;
+    for (c.edges[node]) |e| {
+        dfsMask(c, e.to, dist + e.len, mask | bit);
     }
-    visited.items[node] = false;
 }
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
-const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.

@@ -1,9 +1,4 @@
 const std = @import("std");
-const Allocator = std.mem.Allocator;
-const List = std.ArrayList;
-const Map = std.AutoHashMap;
-const StrMap = std.StringHashMap;
-const BitSet = std.DynamicBitSet;
 
 const util = @import("util");
 const gpa = util.gpa;
@@ -33,26 +28,44 @@ fn supported(x: i64, y: i64) bool {
     return below == '#' or below == '~';
 }
 
-/// Fixpoint simulation: repeat passes until nothing changes.
+/// setCell + mark the row dirty for the fixpoint's candidate-set tracking.
+var dirty_now: [gh]bool = undefined;
+
+fn mark(x: i64, y: i64, v: u8) void {
+    setCell(x, y, v);
+    dirty_now[@intCast(y)] = true;
+}
+
+/// Fixpoint simulation: repeat passes until nothing changes. Each pass only
+/// re-scans rows that could possibly have become actionable — rows within
+/// one row of a change in the previous pass (the rules only ever look at
+/// rows y-1, y, y+1). Cells change monotonically (' '→'|'→'~'), so this
+/// reaches the same fixed point as scanning everything every pass.
 fn simulate() void {
-    var changed = true;
-    while (changed) {
-        changed = false;
+    var cand: [gh]bool = @splat(false);
+    for (min_y..@min(max_y + 2, gh)) |y| cand[y] = true;
+
+    while (true) {
+        @memset(&dirty_now, false);
+
         // 1. water falls: a '|' cell with sand below wets the below cell
         var yy: i64 = @intCast(min_y);
         while (yy <= @as(i64, @intCast(max_y)) + 1) : (yy += 1) {
+            if (!cand[@intCast(yy)]) continue;
             var x: i64 = @as(i64, @intCast(min_x)) - 1;
             while (x <= @as(i64, @intCast(max_x)) + 1) : (x += 1) {
                 if (cell(x, yy) == '|' and cell(x, yy + 1) == ' ') {
-                    setCell(x, yy + 1, '|');
-                    changed = true;
+                    mark(x, yy + 1, '|');
                 }
             }
         }
         // 2. sideways spread & settling: for each supported flowing cell,
         //    spread; if bounded both sides, settle to '~'
+        var allow: [gh]bool = undefined;
+        for (0..gh) |y| allow[y] = cand[y] or dirty_now[y];
         var y: i64 = @intCast(min_y);
         while (y <= @as(i64, @intCast(max_y))) : (y += 1) {
+            if (!allow[@intCast(y)]) continue;
             var x: i64 = @as(i64, @intCast(min_x)) - 1;
             while (x <= @as(i64, @intCast(max_x)) + 1) : (x += 1) {
                 if (cell(x, y) != '|' or !supported(x, y)) continue;
@@ -67,35 +80,44 @@ fn simulate() void {
                     var i = lx;
                     while (i <= rx) : (i += 1) {
                         if (cell(i, y) != '~') {
-                            setCell(i, y, '~');
-                            changed = true;
+                            mark(i, y, '~');
                         }
                     }
                 } else {
                     // flow to the edges; water pours over unsupported ends
                     if (!lwall) {
                         if (cell(lx - 1, y) == ' ') {
-                            setCell(lx - 1, y, '|');
-                            changed = true;
+                            mark(lx - 1, y, '|');
                         }
                     }
                     if (!rwall) {
                         if (cell(rx + 1, y) == ' ') {
-                            setCell(rx + 1, y, '|');
-                            changed = true;
+                            mark(rx + 1, y, '|');
                         }
                     }
                     var i = lx;
                     while (i <= rx) : (i += 1) {
                         if (cell(i, y) == ' ') {
-                            setCell(i, y, '|');
-                            changed = true;
+                            mark(i, y, '|');
                         }
                     }
                 }
                 x = rx; // skip the processed stretch
             }
         }
+
+        // next pass: only rows within one of a change can act
+        var next: [gh]bool = @splat(false);
+        var any = false;
+        for (0..gh) |r| {
+            if (!dirty_now[r]) continue;
+            any = true;
+            if (r >= 1) next[r - 1] = true;
+            next[r] = true;
+            if (r + 1 < gh) next[r + 1] = true;
+        }
+        if (!any) break;
+        cand = next;
     }
 }
 
@@ -158,30 +180,8 @@ pub fn main() !void {
 
 // Useful stdlib functions
 const tokenizeAny = std.mem.tokenizeAny;
-const tokenizeSeq = std.mem.tokenizeSequence;
-const tokenizeSca = std.mem.tokenizeScalar;
-const splitAny = std.mem.splitAny;
-const splitSeq = std.mem.splitSequence;
-const splitSca = std.mem.splitScalar;
-const indexOf = std.mem.findScalar;
-const indexOfAny = std.mem.findAny;
-const indexOfStr = std.mem.findPos;
-const lastIndexOf = std.mem.findScalarLast;
-const lastIndexOfAny = std.mem.findLastAny;
-const lastIndexOfStr = std.mem.findLastLinear;
-const trim = std.mem.trim;
-const sliceMin = std.mem.min;
-const sliceMax = std.mem.max;
-
 const parseInt = std.fmt.parseInt;
-const parseFloat = std.fmt.parseFloat;
-
 const print = std.debug.print;
-const assert = std.debug.assert;
-
-const sort = std.sort.block;
-const asc = std.sort.asc;
-const desc = std.sort.desc;
 
 // Generated from template/template.zig.
 // Run `zig build generate` to update.
