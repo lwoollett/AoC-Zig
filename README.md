@@ -24,48 +24,27 @@ template/generate.zig  regenerates stubs; only overwrites unmodified days
 template/hashes.bin    modification tracking for the generator
 ```
 
-## Day timings (ReleaseSafe)
+## Timings (ReleaseSafe)
 
-Per-day wall time in milliseconds (`s` = seconds), min of 3 runs of the
-`zig-out/bin/<year>_<day>` binaries after `zig build install_all
--Doptimize=ReleaseSafe`. `tools/bench_all.py` regenerates this table and
-verifies every answer against the manifests. **Every year completes in under
-1 second**; whole suite: **~8.5s** across 262 days. Slowest day: 2016 d14
-(0.36s — ~46M stretched MD5 hashes; threaded AND 8-lane SIMD via
-`util.md5x4`; the hash count is inherent to the puzzle). `—` = not
-implemented yet.
+Per-year wall time, min of 3 runs of the `zig-out/bin/<year>_<day>` binaries
+after `zig build install_all -Doptimize=ReleaseSafe` — every year lands under
+1 second. `tools/bench_all.py` regenerates this table and verifies every
+answer against the manifests.
 
-| Day | 2015 | 2016 | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 |
-|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 4 | 3 | 3 | 11 | 3 | 3 | 3 | 3 | 3 | 3 | 3 |
-| 2 | 3 | 3 | 3 | 3 | 8 | 3 | 3 | 3 | 3 | 5 | 67 |
-| 3 | 4 | 3 | 3 | 6 | 19 | 3 | 3 | 3 | 4 | 3 | 4 |
-| 4 | 63 | 3 | 15 | 3 | 6 | 3 | 3 | 3 | 4 | 3 | 7 |
-| 5 | 3 | 175 | 50 | 10 | 3 | 3 | 12 | 3 | 4 | 4 | 3 |
-| 6 | 18 | 3 | 30 | 11 | 5 | 6 | 3 | 4 | 26 | 36 | 12 |
-| 7 | 3 | 13 | 5 | 3 | 31 | 5 | 6 | 4 | 3 | 21 | 4 |
-| 8 | 3 | 3 | 3 | 5 | 3 | 3 | 4 | 5 | 9 | 3 | 64 |
-| 9 | 3 | 3 | 3 | 39 | 6 | 3 | 6 | 4 | 14 | 91 | 49 |
-| 10 | 203 | 3 | 3 | 12 | 15 | 3 | 3 | 3 | 3 | 6 | 7 |
-| 11 | 8 | 22 | 3 | 12 | 4 | 17 | 3 | 6 | 3 | 18 | 8 |
-| 12 | 4 | 49 | 3 | 3 | 35 | 3 | 18 | 3 | 104 | 8 | 37 |
-| 13 | 8 | 3 | 11 | 6 | 9 | 3 | 4 | 4 | 6 | 3 | — |
-| 14 | 3 | 367 | 6 | 170 | 5 | 7 | 3 | 6 | 20 | 19 | — |
-| 15 | 8 | 8 | 296 | 256 | 4 | 311 | 27 | 3 | 3 | 3 | — |
-| 16 | 3 | 64 | 17 | 3 | 218 | 4 | 3 | 60 | 188 | 10 | — |
-| 17 | 11 | 137 | 50 | 18 | 5 | 13 | 8 | 4 | 229 | 4 | — |
-| 18 | 6 | 4 | 4 | 12 | 285 | 3 | 73 | 6 | 3 | 6 | — |
-| 19 | 7 | 17 | 4 | 109 | 119 | 8 | 190 | 30 | 7 | 27 | — |
-| 20 | 57 | 3 | 89 | 37 | 66 | 7 | 30 | 76 | 18 | 221 | — |
-| 21 | 3 | 3 | 26 | 3 | 8 | 4 | 13 | 7 | 32 | 3 | — |
-| 22 | 18 | 9 | 65 | 119 | 3 | 166 | 32 | 3 | 13 | 43 | — |
-| 23 | 3 | 3 | 3 | 60 | 7 | 139 | 60 | 301 | 59 | 5 | — |
-| 24 | 15 | 6 | 68 | 43 | 31 | 43 | 263 | 75 | 18 | 349 | — |
-| 25 | 76 | 17 | 151 | 5 | 13 | 93 | 28 | 3 | 124 | 3 | — |
-| **total** | 536 | 924 | 915 | 960 | 912 | 853 | 802 | 621 | 901 | 897 | 265 |
-
-whole suite: 8.6s across 262 days
-
+| Year | Total |
+|---:|---:|
+| 2015 | 0.54s |
+| 2016 | 0.95s |
+| 2017 | 0.93s |
+| 2018 | 0.89s |
+| 2019 | 0.90s |
+| 2020 | 0.85s |
+| 2021 | 0.81s |
+| 2022 | 0.62s |
+| 2023 | 0.90s |
+| 2024 | 0.89s |
+| 2025 | 0.27s |
+| **all** | **8.6s** |
 
 ## Everyday commands
 

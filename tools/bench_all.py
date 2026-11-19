@@ -72,21 +72,21 @@ YEARS = list(range(2015, 2026))
 def fmt(t):
     if t is None:
         return "—"
-    if t >= 1:
-        return f"{t:.2f}s"
-    return f"{t * 1000:.0f}"
+    return f"{t:.2f}s"
 
 
 print()
-print("| Day | " + " | ".join(str(y) for y in YEARS) + " |")
-print("|---:|" + "---:|" * len(YEARS))
-for d in range(1, 26):
-    row = [fmt(times.get((y, d))) for y in YEARS]
-    print(f"| {d} | " + " | ".join(row) + " |")
-totals = [sum(t for t in (times.get((y, d)) for d in range(1, 26)) if t) for y in YEARS]
-print("| **total** | " + " | ".join(fmt(t) for t in totals) + " |")
-whole = sum(t for t in times.values() if t)
-print(f"\nwhole suite: {whole:.1f}s across {sum(1 for t in times.values() if t)} days")
+print("| Year | Total |")
+print("|---:|---:|")
+whole = 0.0
+n_days = 0
+for y in YEARS:
+    tot = sum(t for t in (times.get((y, d)) for d in range(1, 26)) if t)
+    whole += tot
+    n_days += sum(1 for d in range(1, 26) if times.get((y, d)))
+    print(f"| {y} | {fmt(tot)} |")
+print(f"| **all** | **{whole:.1f}s** |")
+print(f"\nacross {n_days} implemented days")
 
 print(f"\nFAILURES: {len(fails)}")
 for f in fails:
