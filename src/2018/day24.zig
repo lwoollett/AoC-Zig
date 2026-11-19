@@ -18,23 +18,26 @@ const Group = struct {
     initiative: i32,
     weak: u16,
     immune: u16,
-    target: i32 = -1,
+    target: i32 = -1, // index this group ATTACKS in the coming round
+    chosen_by: i32 = -1, // index of the attacker that selected this group
 };
 
-var type_names: [max_types][16]u8 = undefined;
-var type_lens: [max_types]usize = @splat(0);
-var n_types: usize = 0;
+const TypeTable = struct {
+    names: [max_types][16]u8 = undefined,
+    lens: [max_types]usize = @splat(0),
+    n: usize = 0,
 
-fn typeId(name: []const u8) u4 {
-    for (0..n_types) |i| {
-        if (std.mem.eql(u8, type_names[i][0..type_lens[i]], name)) return @intCast(i);
+    fn id(self: *TypeTable, name: []const u8) u4 {
+        for (0..self.n) |i| {
+            if (std.mem.eql(u8, self.names[i][0..self.lens[i]], name)) return @intCast(i);
+        }
+        const i = self.n;
+        self.n += 1;
+        @memcpy(self.names[i][0..name.len], name);
+        self.lens[i] = name.len;
+        return @intCast(i);
     }
-    const i = n_types;
-    n_types += 1;
-    @memcpy(type_names[i][0..name.len], name);
-    type_lens[i] = name.len;
-    return @intCast(i);
-}
+};
 
 fn effectivePower(g: *const Group) i64 {
     return g.units * g.attack;
@@ -50,6 +53,7 @@ fn damageDealt(a: *const Group, d: *const Group) i64 {
 /// Runs a full battle; returns (immune_units, infection_units), or null on
 /// stalemate. boost adds to immune-system attack.
 fn battle(boost: i64) ?[2]i64 {
+    var types = TypeTable{};
     // one arena per battle: thousands of boost iterations x per-round list
     // churn would otherwise mmap-storm on the page allocator
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
@@ -93,10 +97,14 @@ fn battle(boost: i64) ?[2]i64 {
         g.hp = parseInt(i64, it.next().?, 10) catch continue; // number
         _ = it.next().?; // hit
         _ = it.next().?; // points
-        const tok = it.next().?; // "with" or "("
+        const tok = it.next().?; // "with" or "(weak"/"(immune"
+        var mode: u8 = 0; // 1=weak 2=immune
         if (tok[0] == '(') {
-            // e.g. "(weak to fire; immune to cold, slashing)" — strip () , ;
-            var mode: u8 = 0; // 1=weak 2=immune
+            // the opening token carries the first keyword — set its mode
+            var kw = tok[1..];
+            while (kw.len > 0 and (kw[kw.len - 1] == ')' or kw[kw.len - 1] == ',' or kw[kw.len - 1] == ';')) kw = kw[0 .. kw.len - 1];
+            if (std.mem.eql(u8, kw, "weak")) mode = 1;
+            if (std.mem.eql(u8, kw, "immune")) mode = 2;
             while (it.next()) |raw| {
                 var t = raw;
                 var done = false;
@@ -111,7 +119,7 @@ fn battle(boost: i64) ?[2]i64 {
                 } else if (std.mem.eql(u8, t, "immune")) {
                     mode = 2;
                 } else if (t.len > 0 and !std.mem.eql(u8, t, "to")) {
-                    const id = typeId(t);
+                    const id = types.id(t);
                     if (mode == 1) g.weak |= @as(u16, 1) << id;
                     if (mode == 2) g.immune |= @as(u16, 1) << id;
                 }
@@ -124,7 +132,7 @@ fn battle(boost: i64) ?[2]i64 {
         _ = it.next().?; // that
         _ = it.next().?; // does
         g.attack = parseInt(i64, it.next().?, 10) catch continue;
-        g.attack_type = typeId(it.next().?);
+        g.attack_type = types.id(it.next().?);
         _ = it.next().?; // damage
         _ = it.next().?; // at
         _ = it.next().?; // initiative
@@ -146,7 +154,10 @@ fn battle(boost: i64) ?[2]i64 {
         if (immune_alive == 0 or infection_alive == 0) return .{ immune_alive, infection_alive };
 
         // target selection
-        for (groups.items) |*g| g.target = -1;
+        for (groups.items) |*g| {
+            g.target = -1;
+            g.chosen_by = -1;
+        }
         var order: List(usize) = .empty;
         defer order.deinit(alloc);
         for (groups.items, 0..) |g, i| {
@@ -167,7 +178,7 @@ fn battle(boost: i64) ?[2]i64 {
             var best_dmg: i64 = -1;
             for (groups.items, 0..) |*d, di| {
                 if (d.units <= 0 or d.immune_system == a.immune_system) continue;
-                if (d.target != -1) continue;
+                if (d.chosen_by != -1) continue; // already another attacker's pick
                 const dmg = damageDealt(a, d);
                 if (dmg == 0) continue;
                 if (dmg > best_dmg or (dmg == best_dmg and
@@ -179,7 +190,8 @@ fn battle(boost: i64) ?[2]i64 {
                 }
             }
             if (best != -1) {
-                groups.items[@intCast(best)].target = @intCast(ai);
+                a.target = best;
+                groups.items[@intCast(best)].chosen_by = @intCast(ai);
                 targeted += 1;
             }
         }
@@ -231,7 +243,8 @@ pub fn main() !void {
         }
     }
     t.join();
-    print("part 1: {d}\n", .{@max(r1.?[0], r1.?[1])});
+    const p1 = r1 orelse return error.Stalemate;
+    print("part 1: {d}\n", .{@max(p1[0], p1[1])});
     if (part2) |p| {
         print("part 2: {d}\n", .{p});
     } else {
