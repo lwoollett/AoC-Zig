@@ -149,17 +149,25 @@ fn submitAnswer(h: *Http, alloc: std.mem.Allocator, year: u32, day: u32, part: u
         var minutes: u32 = 0;
         var seconds: u32 = 0;
         var pos: usize = 0;
-        if (pos < rest.len and rest[pos] >= '0' and rest[pos] <= '9') {
-            minutes = parseLeadingInt(rest, &pos);
-            if (pos < rest.len and rest[pos] == 'm') pos += 1;
+        while (pos < rest.len) {
+            if (rest[pos] >= '0' and rest[pos] <= '9') {
+                const n = parseLeadingInt(rest, &pos);
+                while (pos < rest.len and rest[pos] == ' ') pos += 1;
+                if (pos < rest.len and rest[pos] == 'm') {
+                    minutes = n;
+                    pos += 1;
+                } else if (pos < rest.len and rest[pos] == 's') {
+                    seconds = n;
+                    pos += 1;
+                } else break;
+            } else if (rest[pos] == ' ') {
+                pos += 1;
+            } else break;
         }
-        while (pos < rest.len and rest[pos] == ' ') pos += 1;
-        if (pos < rest.len and rest[pos] >= '0' and rest[pos] <= '9') {
-            seconds = parseLeadingInt(rest, &pos);
-            if (pos < rest.len and rest[pos] == 's') pos += 1;
-        }
-        if (std.mem.find(u8, rest[pos..], "left") != null) {
-            return .{ .too_recent = minutes * 60 + seconds };
+        if (std.mem.find(u8, rest, "left") != null) {
+            // clamp: a misparse or an aggressive limit must not stall for
+            // hours — re-posting early just yields another too_recent
+            return .{ .too_recent = @min(minutes * 60 + seconds, 600) };
         }
     }
     std.debug.print("unrecognized submission response ({d} bytes)\n", .{content.len});
