@@ -12,7 +12,12 @@ fn rotate(way: [2]i64, degrees: i32) [2]i64 {
     var v = way;
     var d = degrees;
     while (d > 0) : (d -= 90) {
-        v = .{ v[1], -v[0] };
+        // NB: `v = .{ v[1], -v[0] }` would alias — array literals write into
+        // the result location element-by-element, so v[0] is clobbered
+        // before v[1] reads it. Rotate via temporaries.
+        const nx = v[1];
+        const ny = -v[0];
+        v = .{ nx, ny };
     }
     return v;
 }
