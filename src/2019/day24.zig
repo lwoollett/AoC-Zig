@@ -112,10 +112,8 @@ pub fn main() !void {
             levels = next_levels;
         }
         var total: usize = 0;
-        var it = levels.valueIterator();
-        while (it.next()) |v| {
-            total += @popCount(v.*);
-        }
+        var vit = levels.valueIterator();
+        while (vit.next()) |v| total += @popCount(v.*);
         print("part 2: {d}\n", .{total});
     }
 }
@@ -153,16 +151,16 @@ fn innerNeighbors(deeper: u32, x: i32, y: i32) u32 {
 fn outerNeighbors(outer: u32, x: i32, y: i32) u32 {
     var n: u32 = 0;
     if (y == 0) {
-        if ((outer >> @intCast(2 * 5 + 1)) & 1 == 1) n += 1; // (1,2)
+        if ((outer >> @intCast(1 * 5 + 2)) & 1 == 1) n += 1; // (2,1) above center
     }
     if (y == 4) {
-        if ((outer >> @intCast(3 * 5 + 2)) & 1 == 1) n += 1; // (2,3)
+        if ((outer >> @intCast(3 * 5 + 2)) & 1 == 1) n += 1; // (2,3) below center
     }
     if (x == 0) {
-        if ((outer >> @intCast(2 * 5 + 1)) & 1 == 1) n += 1; // (1,2)
+        if ((outer >> @intCast(2 * 5 + 1)) & 1 == 1) n += 1; // (1,2) left of center
     }
     if (x == 4) {
-        if ((outer >> @intCast(2 * 5 + 3)) & 1 == 1) n += 1; // (3,2)
+        if ((outer >> @intCast(2 * 5 + 3)) & 1 == 1) n += 1; // (3,2) right of center
     }
     return n;
 }
