@@ -15,10 +15,14 @@ fn shapeScore(c: u8) u64 {
     };
 }
 
+fn shapeIdx(c: u8) u8 {
+    return if (c <= 'C') c - 'A' else c - 'X';
+}
+
 fn beats(a: u8, b: u8) bool {
-    // a beats b: rock>scissors, paper>rock, scissors>paper
-    return (a == 'A' and b == 'Z') or (a == 'B' and b == 'X') or (a == 'C' and b == 'Y') or
-        (a == 'X' and b == 'C') or (a == 'Y' and b == 'A') or (a == 'Z' and b == 'B');
+    // a beats b: rock>scissors, paper>rock, scissors>paper — works for
+    // any mix of ABC/XYZ encodings
+    return (shapeIdx(a) + 2) % 3 == shapeIdx(b);
 }
 
 pub fn main() !void {
