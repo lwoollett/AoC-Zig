@@ -47,9 +47,10 @@ fn bfsFromE() !Map(P, u32) {
             if (nx < 0 or ny < 0 or nx >= w or ny >= h) continue;
             const np: P = .{ @intCast(nx), @intCast(ny) };
             if (dist.contains(np)) continue;
-            // reverse climb: neighbor must be at most 1 HIGHER than here
+            // reverse-climb edge: np -> here is a legal forward move iff
+            // here is at most one higher than np (skip when np is too LOW)
             const nb = height(grid[np[1]][np[0]]);
-            if (nb > here + 1) continue;
+            if (here > nb + 1) continue;
             try dist.put(np, d + 1);
             try q.append(gpa, np);
         }
