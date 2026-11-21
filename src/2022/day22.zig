@@ -98,7 +98,7 @@ fn foldOrigin(f: Face, dir: u8) V3 {
     const fv = f.v;
     return switch (dir) {
         0 => add(fx, vec(fu, face_size)), // shared edge = A's right column
-        2 => fx,
+        2 => add(fx, vec(normalOf(f), -face_size)), // left: back off along the normal
         1 => add(fx, vec(fv, face_size)),
         else => fx,
     };
@@ -216,23 +216,31 @@ pub fn main() !void {
                 }
             }
         }
+        if (std.c.getenv("D22DBG") != null) {
+            for (faces.items, 0..) |*g, gi| {
+                print("face {d}: net=({d},{d}) origin={any} u={any} v={any} n={any}\n", .{ gi, g.net_x, g.net_y, g.origin, g.u, g.v, normalOf(g.*) });
+            }
+        }
         if (faces.items.len != 6) {
             print("net analysis failed: {d} faces\n", .{faces.items.len});
             return;
         }
     }
 
-    // walk on the cube: state = face idx, local x, y, dir
+    // walk on the cube: cell centers in world space. Stepping off a face
+    // rotates the overshoot cell and the heading 90 degrees about the
+    // crossed edge (either sign — the correct one lands on a face).
     {
-        // start: top-left open cell of the first face
+        const f0 = faces.items[0];
         var fi: usize = 0;
         var lx: i32 = 0;
         var ly: i32 = 0;
-        for (0..face_size) |yy| {
-            for (0..face_size) |xx| {
-                if (map[yy][xx] == '.') {
-                    lx = @intCast(xx % face_size);
-                    ly = @intCast(yy % face_size);
+        {
+            const row = f0.net_y * face_size;
+            var k: i32 = 0;
+            while (k < face_size) : (k += 1) {
+                if (map[@intCast(row)][@intCast(f0.net_x * face_size + k)] == '.') {
+                    lx = k;
                     break;
                 }
             }
@@ -251,65 +259,77 @@ pub fn main() !void {
                 steps = steps * 10 + (path[i] - '0');
                 i += 1;
             }
-            for (0..steps) |_| {
+            step_loop: for (0..steps) |_| {
                 const f = faces.items[fi];
-                const deltas = [4][2]i32{ .{ 1, 0 }, .{ 0, 1 }, .{ -1, 0 }, .{ 0, -1 } };
-                var nlx = lx + deltas[dir][0];
-                var nly = ly + deltas[dir][1];
-                var ndir = dir;
-                var nfi = fi;
-                if (nlx < 0 or nlx >= face_size or nly < 0 or nly >= face_size) {
-                    // cross into the neighbor face
-                    const nfi2 = face_at.get(.{ f.net_x + deltas[dir][0], f.net_y + deltas[dir][1] });
-                    if (nfi2 == null) {
-                        // not directly adjacent in the net — the net wraps;
-                        // find the face sharing this world edge
-                        nfi = try findAcross(fi, dir);
-                    } else {
-                        nfi = nfi2.?;
-                    }
-                    const nf = faces.items[nfi];
-                    // world position of the cell we'd exit INTO (one past the edge)
-                    const world = add(add(f.origin, vec(f.u, lx + deltas[dir][0])), vec(f.v, ly + deltas[dir][1]));
-                    // project onto nf
-                    const rel = sub(world, nf.origin);
-                    nlx = @divTrunc(dot(rel, nf.u), 1);
-                    nly = @divTrunc(dot(rel, nf.v), 1);
-                    if (nlx < 0 or nlx >= face_size or nly < 0 or nly >= face_size) {
-                        // projection outside — try the shared-edge midpoint trick
-                        // recompute using the edge cell
-                        const edge_world = add(add(f.origin, vec(f.u, lx)), vec(f.v, ly));
-                        const rel2 = sub(edge_world, nf.origin);
-                        nlx = @divTrunc(dot(rel2, nf.u), 1);
-                        nly = @divTrunc(dot(rel2, nf.v), 1);
-                    }
-                    // new direction: travel vector t along the old dir
-                    const t = dirVecOnFace(f, dir);
-                    const along_u = dot(t, nf.u);
-                    const along_v = dot(t, nf.v);
-                    if (along_u > 0) {
-                        ndir = 0;
-                    } else if (along_u < 0) {
-                        ndir = 2;
-                    } else if (along_v > 0) {
-                        ndir = 1;
-                    } else {
-                        ndir = 3;
-                    }
+                const n_f = normalOf(f);
+                const center = add3(add3(vec(f.origin, 2), vec(f.u, 2 * lx + 1)), vec(f.v, 2 * ly + 1)); // doubled coords: cell centers at odd lattice
+                const h = dirVecOnFace(f, dir);
+                const next_center = add(center, vec(h, 2)); // full cell = 2 units in the center lattice
+
+                // try a plain advance on the same face first (origins are in
+                // unit lattice — double them for the center lattice)
+                const rel = sub(next_center, vec(f.origin, 2));
+                const ru = dot(rel, f.u);
+                const rv = dot(rel, f.v);
+                if (ru >= 0 and ru < 2 * face_size and rv >= 0 and rv < 2 * face_size and dot(rel, n_f) == 0) {
+                    if (map[@intCast(f.net_y * face_size + @divTrunc(rv, 2))][@intCast(f.net_x * face_size + @divTrunc(ru, 2))] == '#') break :step_loop;
+                    lx = @divTrunc(ru, 2);
+                    ly = @divTrunc(rv, 2);
+                    continue;
                 }
-                // map back to net coords to check the cell
-                const nf = faces.items[nfi];
-                const mx = nf.net_x * face_size + nlx;
-                const my = nf.net_y * face_size + nly;
-                if (mx < 0 or my < 0 or my >= map_h or mx >= map_w) break;
-                if (map[@intCast(my)][@intCast(mx)] == '#') break;
-                fi = nfi;
-                lx = nlx;
-                ly = nly;
-                dir = ndir;
+
+                // crossing an edge: axis through the edge midpoint, along the edge
+                const ap = add(center, h); // edge midpoint = one unit (half cell) along h
+                const e = cross(n_f, h);
+
+                var done = false;
+                for ([2]i32{ 1, -1 }) |sign| {
+                    const rot_next = rodrigues(next_center, ap, e, sign);
+                    const rot_h = rodrigues(h, .{ 0, 0, 0 }, e, sign);
+                    // find the face containing rot_next
+                    for (faces.items, 0..) |*g, gi| {
+                        const rel2 = sub(rot_next, vec(g.origin, 2));
+                        if (dot(rel2, normalOf(g.*)) != 0) continue;
+                        const gu = dot(rel2, g.u);
+                        const gv = dot(rel2, g.v);
+                        if (gu < 0 or gu >= 2 * face_size or gv < 0 or gv >= 2 * face_size) continue;
+                        if (@rem(gu, 2) != 1 or @rem(gv, 2) != 1) continue; // must be a cell center
+                        const nlx2 = @divTrunc(gu, 2);
+                        const nly2 = @divTrunc(gv, 2);
+                        const mx = g.net_x * face_size + nlx2;
+                        const my = g.net_y * face_size + nly2;
+                        if (map[@intCast(my)][@intCast(mx)] == '#') {
+                            done = true; // blocked: stop moving, keep state
+                            break;
+                        }
+                        // new local dir from rot_h on g
+                        const hu = dot(rot_h, g.u);
+                        const hv = dot(rot_h, g.v);
+                        var ndir: u8 = 0;
+                        if (hu > 0) {
+                            ndir = 0;
+                        } else if (hu < 0) {
+                            ndir = 2;
+                        } else if (hv > 0) {
+                            ndir = 1;
+                        } else {
+                            ndir = 3;
+                        }
+                        fi = gi;
+                        lx = nlx2;
+                        ly = nly2;
+                        dir = ndir;
+                        done = true;
+                        break;
+                    }
+                    if (done) break;
+                }
+                if (!done) {
+                    print("fold error at face {d} {d},{d} dir {d}\n", .{ fi, lx, ly, dir });
+                    return error.BadFold;
+                }
             }
         }
-        // final coords
         const f = faces.items[fi];
         const fx = f.net_x * face_size + lx;
         const fy = f.net_y * face_size + ly;
@@ -321,6 +341,36 @@ pub fn main() !void {
         };
         print("part 2: {d}\n", .{1000 * (@as(u64, @intCast(fy)) + 1) + 4 * (@as(u64, @intCast(fx)) + 1) + facing});
     }
+}
+
+fn add3(a: V3, b: V3) V3 {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+}
+
+fn div2(v: V3) V3 {
+    return .{ @divTrunc(v[0], 2), @divTrunc(v[1], 2), @divTrunc(v[2], 2) };
+}
+
+fn cross(a: V3, b: V3) V3 {
+    return .{
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    };
+}
+
+/// Rotate p about the axis through ap with unit direction e by +-90 degrees.
+fn rodrigues(p: V3, ap: V3, e: V3, sign: i32) V3 {
+    // 90-degree Rodrigues: r = ap + cos*(p-ap) + sin*(e x (p-ap)) + (1-cos)(e.(p-ap))e
+    // with cos=0, sin=±1: r = ap ± e x d + (d.e)e
+    const d = sub(p, ap);
+    const exd = cross(e, d);
+    const dote = vec(e, dot(d, e));
+    return .{
+        ap[0] + @as(i32, sign) * exd[0] + dote[0],
+        ap[1] + @as(i32, sign) * exd[1] + dote[1],
+        ap[2] + @as(i32, sign) * exd[2] + dote[2],
+    };
 }
 
 fn vec(base: V3, k: i32) V3 {
