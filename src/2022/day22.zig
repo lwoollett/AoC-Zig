@@ -157,9 +157,9 @@ pub fn main() !void {
             for (0..steps) |_| {
                 var nx = @as(i32, @intCast(x)) + dx[dir];
                 var ny = @as(i32, @intCast(y)) + dy[dir];
-                // wrap
-                if (nx >= map_w or (ny >= 0 and ny < map_h and nx >= 0 and nx < map_w and map[@intCast(ny)][@intCast(nx)] == ' ')) {
-                    // scan from the other side
+                // wrap: any off-map step, or a step into the void, restarts
+                // from the opposite edge of the CURRENT row/column
+                if (nx < 0 or nx >= map_w or ny < 0 or ny >= map_h or map[@intCast(ny)][@intCast(nx)] == ' ') {
                     if (dx[dir] != 0) {
                         nx = if (dx[dir] > 0) 0 else @as(i32, @intCast(map_w)) - 1;
                         while (map[@intCast(ny)][@intCast(nx)] == ' ') {
