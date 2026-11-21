@@ -128,8 +128,21 @@ fn loadInput(h: *Http, alloc: std.mem.Allocator, year: u32, day: u32) ![]u8 {
 fn submitAnswer(h: *Http, alloc: std.mem.Allocator, year: u32, day: u32, part: u32, answer: []const u8) !SubmissionResult {
     var path_buf: [64]u8 = undefined;
     const path = try std.fmt.bufPrint(&path_buf, "/{d}/day/{d}/answer", .{ year, day });
-    var form_buf: [128]u8 = undefined;
-    const form = try std.fmt.bufPrint(&form_buf, "level={d}&answer={s}", .{ part, answer });
+    // url-encode the answer: answers like SNAFU strings contain '=' and
+    // must not appear raw in an application/x-www-form-urlencoded body
+    var form_buf: [256]u8 = undefined;
+    var fb: usize = 0;
+    fb += (std.fmt.bufPrint(form_buf[fb..], "level={d}&answer=", .{part}) catch unreachable).len;
+    for (answer) |c| {
+        const safe = (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c == '-' or c == '_' or c == '.';
+        if (safe) {
+            form_buf[fb] = c;
+            fb += 1;
+        } else {
+            fb += (std.fmt.bufPrint(form_buf[fb..], "%{X:0>2}", .{c}) catch unreachable).len;
+        }
+    }
+    const form = form_buf[0..fb];
 
     var body: std.Io.Writer.Allocating = .init(alloc);
     defer body.deinit();
