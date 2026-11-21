@@ -41,7 +41,7 @@ fn fits(rock: Rock, px: i32, py: i32) bool {
 }
 
 fn place(rock: Rock, px: i32, py: i32) void {
-    while (rows.items.len <= py + rock.h) {
+    while (rows.items.len < py + rock.h) {
         rows.append(gpa, 0) catch unreachable;
     }
     for (rock.cells) |c| {
@@ -81,15 +81,17 @@ fn simulate(total_rocks: u64) !u64 {
 
         if (!skipped) {
             if (seen.get(key)) |prev| {
-                // cycle found
+                // cycle found: project only the GAIN — rows.items.len at
+                // the end already contains the skip-point height
                 cycle_rock_len = rock_i - prev.rocks;
                 cycle_height_gain = top - prev.height;
                 const remaining = total_rocks - rock_i;
                 const full_cycles = remaining / cycle_rock_len;
-                pre_cycles_height = rows.items.len + full_cycles * cycle_height_gain;
+                pre_cycles_height = full_cycles * cycle_height_gain;
                 rock_i += full_cycles * cycle_rock_len;
                 skipped = true;
                 if (rock_i >= total_rocks) break;
+                rock_i -= 1; // the loop increment on continue must not skip a rock
                 continue;
             }
             try seen.put(key, .{ .rocks = rock_i, .height = top });
