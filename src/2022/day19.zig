@@ -110,7 +110,7 @@ pub fn main() !void {
                 .{ nums.items[1], 0, 0, 0 },
                 .{ nums.items[2], 0, 0, 0 },
                 .{ nums.items[3], nums.items[4], 0, 0 },
-                .{ nums.items[5], nums.items[6], 0, 0 },
+                .{ nums.items[5], 0, nums.items[6], 0 }, // geode: ore + OBSIDIAN
             },
             .max_ore = 0,
         };
