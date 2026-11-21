@@ -25,7 +25,9 @@ fn parse(line: []const u8, out: *List(Entry)) !void {
 
 fn explode(entries: *List(Entry)) bool {
     for (entries.items, 0..) |e, i| {
-        if (e.depth >= 5 and i + 1 < entries.items.len and entries.items[i + 1].depth == e.depth) {
+        // leaf depth is stored as enclosing-brackets-minus-one, so a pair
+        // nested inside four pairs (bracket depth 5) has stored depth 4
+        if (e.depth >= 4 and i + 1 < entries.items.len and entries.items[i + 1].depth == e.depth) {
             // explode pair at i, i+1
             const a = entries.items[i].value;
             const b = entries.items[i + 1].value;
