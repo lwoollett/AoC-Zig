@@ -1,0 +1,112 @@
+const std = @import("std");
+const List = std.ArrayList;
+const Map = std.AutoHashMap;
+const util = @import("util");
+const gpa = util.gpa;
+
+
+const data = @embedFile("data/day20.txt");
+
+const gw = 200;
+const gh = 200;
+var grid: [gh][gw]u8 = @splat(@splat('#'));
+var h: usize = 0;
+var w: usize = 0;
+
+const P = [2]usize;
+
+fn bfsFrom(start: P) !Map(P, i32) {
+    // NOTE: caller owns the returned map.
+    var dist = Map(P, i32).init(gpa);
+    var q: List(P) = .empty;
+    defer q.deinit(gpa);
+    try dist.put(start, 0);
+    try q.append(gpa, start);
+    var head: usize = 0;
+    while (head < q.items.len) : (head += 1) {
+        const cur = q.items[head];
+        const d = dist.get(cur).?;
+        const deltas = [4][2]i32{ .{ 0, -1 }, .{ 0, 1 }, .{ -1, 0 }, .{ 1, 0 } };
+        for (deltas) |dl| {
+            const nx = @as(i32, @intCast(cur[0])) + dl[0];
+            const ny = @as(i32, @intCast(cur[1])) + dl[1];
+            if (nx < 0 or ny < 0 or nx >= w or ny >= h) continue;
+            if (grid[@intCast(ny)][@intCast(nx)] == '#') continue;
+            const np: P = .{ @intCast(nx), @intCast(ny) };
+            if (dist.contains(np)) continue;
+            try dist.put(np, d + 1);
+            try q.append(gpa, np);
+        }
+    }
+    return dist;
+}
+
+fn countCheats(max_len: i32, min_saving: i32) !u64 {
+    // BFS from start and end; for each pair of track cells within manhattan
+    // max_len, a cheat saves (dist_s[a] + dist_e[b] + len - normal)
+    var start: P = .{ 0, 0 };
+    var end: P = .{ 0, 0 };
+    for (0..h) |y| {
+        for (0..w) |x| {
+            if (grid[y][x] == 'S') start = .{ x, y };
+            if (grid[y][x] == 'E') end = .{ x, y };
+        }
+    }
+    var ds = try bfsFrom(start);
+    var de = try bfsFrom(end);
+    defer de.deinit();
+    const normal = ds.get(end).?;
+
+    // collect track cells with both distances
+    var cells: List(P) = .empty;
+    defer cells.deinit(gpa);
+    var dit = ds.keyIterator();
+    while (dit.next()) |p| {
+        if (de.contains(p.*)) {
+            try cells.append(gpa, p.*);
+        }
+    }
+
+    var count: u64 = 0;
+    for (cells.items) |a| {
+        for (cells.items) |b| {
+            if (a[0] == b[0] and a[1] == b[1]) continue;
+            const md = @as(i32, @intCast(@abs(@as(i64, @intCast(a[0])) - @as(i64, @intCast(b[0]))))) +
+                @as(i32, @intCast(@abs(@as(i64, @intCast(a[1])) - @as(i64, @intCast(b[1])))));
+            if (md > max_len) continue;
+            const save = normal - ds.get(a).? - md - de.get(b).?;
+            if (save >= min_saving) count += 1;
+        }
+    }
+    return count;
+}
+
+pub fn main() !void {
+    var lines = tokenizeAny(u8, data, "\n");
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        @memcpy(grid[h][0..line.len], line);
+        w = @max(w, line.len);
+        h += 1;
+    }
+    // both sweeps only read the grid — run them concurrently
+    var r1: u64 = 0;
+    var r2: u64 = 0;
+    const t = try std.Thread.spawn(.{}, cheatsPart, .{ 2, 100, &r1 });
+    r2 = try countCheats(20, 100);
+    t.join();
+    print("part 1: {d}\n", .{r1});
+    print("part 2: {d}\n", .{r2});
+}
+
+fn cheatsPart(max_len: i32, min_saving: i32, out: *u64) void {
+    out.* = countCheats(max_len, min_saving) catch 0;
+}
+
+// Useful stdlib functions
+const tokenizeAny = std.mem.tokenizeAny;
+const print = std.debug.print;
+
+// Generated from template/template.zig.
+// Run `zig build generate` to update.
+// Only unmodified days will be updated.

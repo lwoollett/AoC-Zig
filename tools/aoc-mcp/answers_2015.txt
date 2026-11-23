@@ -1,0 +1,65 @@
+#!/bin/bash
+# Submit all verified 2015 answers via aoc-mcp; stops at the first wrong one.
+# Correct/WrongLevel continue; Incorrect/TooHigh/TooLow/errors abort.
+cd "$(dirname "$0")/.."
+BIN=./zig-out/bin/aoc-mcp
+LOG=/tmp/aoc_submit_2015.log
+
+submit() { # day part answer
+  local day=$1 part=$2 answer=$3
+  local out
+  out=$("$BIN" submit 2015 "$day" "$part" "$answer" 2>&1 | tail -1)
+  echo "$(date '+%H:%M:%S') 2015/$day/$part $answer -> $out" >> "$LOG"
+  case "$out" in
+    Correct|WrongLevel) return 0 ;;
+    *) echo "$(date '+%H:%M:%S') ABORT: $out" >> "$LOG"; return 1 ;;
+  esac
+}
+
+# day part answer — computed & verified in this repo (zig build run_2015)
+2 2 3842356
+3 1 2572
+3 2 2631
+4 1 282749
+4 2 9962624
+5 1 236
+5 2 51
+6 1 569999
+6 2 17836115
+7 1 3176
+7 2 14710
+8 1 1342
+8 2 2074
+9 1 117
+9 2 909
+10 1 492982
+10 2 6989950
+11 1 cqjxxyzz
+11 2 cqkaabcc
+12 1 191164
+12 2 87842
+13 1 664
+13 2 640
+14 1 2660
+14 2 1256
+15 1 18965440
+15 2 15862900
+16 1 373
+16 2 260
+17 1 4372
+17 2 4
+18 1 1061
+18 2 1006
+19 1 535
+19 2 212
+20 1 665280
+20 2 705600
+21 1 121
+21 2 201
+22 1 1824
+22 2 1937
+23 1 170
+23 2 247
+24 1 10723906903
+24 2 74850409
+25 1 19980801

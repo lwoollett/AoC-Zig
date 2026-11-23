@@ -1,0 +1,8 @@
+.{
+    .name = .aoc,
+    .version = "0.1.0",
+    .fingerprint = 0x808a3f8ff566479d,
+    .dependencies = .{
+    },
+    .paths = .{""},
+}
